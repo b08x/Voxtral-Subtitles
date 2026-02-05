@@ -44,7 +44,7 @@ body {
         linear-gradient(var(--border) 1px, transparent 1px),
         linear-gradient(90deg, var(--border) 1px, transparent 1px) !important;
     background-size: 40px 40px !important;
-    margin: 0rem auto !important;
+    margin: 2rem auto !important;
     padding: 2rem !important;
     width: calc(100% - 4rem) !important;
     max-width: 1400px !important;
