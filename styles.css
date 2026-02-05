@@ -44,8 +44,8 @@ body {
         linear-gradient(var(--border) 1px, transparent 1px),
         linear-gradient(90deg, var(--border) 1px, transparent 1px) !important;
     background-size: 40px 40px !important;
-    margin: 2rem auto !important;
-    padding: 2rem !important;
+    margin: 1rem auto !important;
+    padding: 1rem !important;
     width: calc(100% - 4rem) !important;
     max-width: 1400px !important;
     box-sizing: border-box !important;
@@ -70,7 +70,7 @@ body {
 
 /* Tab content padding */
 .gradio-tab > div {
-    padding: 1rem !important;
+    padding: 1.5rem !important;
     background: var(--bg-card) !important;
     border-radius: 12px !important;
     border: 1px solid var(--border) !important;
