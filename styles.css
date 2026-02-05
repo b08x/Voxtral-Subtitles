@@ -63,6 +63,7 @@ body {
     margin-left: -1rem !important;
     border-radius: 12px 12px 0 0 !important;
     background: var(--bg-secondary) !important;
+    overflow: hidden;
 }
 
 /* Individual tab items */
@@ -72,8 +73,13 @@ body {
     border: none !important;
     padding: 0.75rem 1.5rem !important;
     margin: 0 !important;
-    border-radius: 8px 8px 0 0 !important;
+    border-radius: 0 !important;
     flex-shrink: 0;
+}
+
+/* First tab item (top-left corner) */
+.gradio-tabitem:first-child {
+    border-radius: 12px 0 0 0 !important;
 }
 
 /* Active tab styling */
