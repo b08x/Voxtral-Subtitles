@@ -78,12 +78,6 @@ body {
     border-radius: 0 !important;
 }
 
-/* First tab item (top-left corner) */
-.gradio-tabitem:first-child {
-    border-top-left-radius: 12px !important;
-    background: var(--bg-secondary) !important;
-}
-
 /* Active tab styling */
 .gradio-tabitem.active {
     color: var(--text-primary) !important;
