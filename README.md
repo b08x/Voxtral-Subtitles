@@ -1,5 +1,5 @@
 ---
-title: Voxtral Subtitles Demo
+title: Voxtral Subtitles
 emoji: 💻
 colorFrom: pink
 colorTo: gray
