@@ -1,0 +1,109 @@
+/* Light mode (default) */
+:root {
+    --bg-primary: #FFFAEB;
+    --bg-secondary: #FFF0C3;
+    --bg-card: #FFFAEB;
+    --bg-grid: rgba(0, 0, 0, 0.02);
+    --text-primary: #1E1E1E;
+    --text-secondary: #444444;
+    --text-tertiary: #555555;
+    --border: #E9E2CB;
+    --accent: #FF8205;
+    --accent-light: rgba(255, 130, 5, 0.1);
+    --shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+}
+
+/* Dark mode (custom) */
+.dark {
+    --bg-primary: #121212;
+    --bg-secondary: #1E1E1E;
+    --bg-card: #1E1E1E;
+    --bg-grid: rgba(255, 255, 255, 0.02);
+    --text-primary: #E0E0E0;
+    --text-secondary: #AAAAAA;
+    --text-tertiary: #888888;
+    --border: #333333;
+    --accent: #FF8C00;
+    --accent-light: rgba(255, 140, 0, 0.1);
+    --shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+}
+
+/* Body and container margins */
+body {
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    background-color: var(--bg-primary);
+}
+
+.gradio-container {
+    background-color: var(--bg-primary) !important;
+    background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px) !important;
+    background-size: 40px 40px !important;
+    margin: 2rem auto !important;
+    padding: 2rem !important;
+    width: calc(100% - 4rem) !important;
+    max-width: 1400px !important;
+    box-sizing: border-box !important;
+    border-radius: 12px !important;
+    box-shadow: var(--shadow);
+}
+
+/* Tabs container */
+.gradio-tabs {
+    padding: 0.5rem 0 !important; /* Light padding for the tabs bar */
+}
+
+/* Individual tab items */
+.gradio-tabitem {
+    background: var(--bg-secondary) !important;
+    color: var(--text-tertiary) !important;
+    border: none !important;
+    padding: 0.75rem 1.5rem !important; /* Padding inside each tab */
+    margin: 0 0.25rem !important;
+    border-radius: 8px 8px 0 0 !important;
+}
+
+/* Tab content padding */
+.gradio-tab > div {
+    padding: 1.5rem !important; /* Padding inside the content of each tab */
+    background: var(--bg-card) !important;
+    border-radius: 0 0 12px 12px !important;
+    border: 1px solid var(--border) !important;
+    border-top: none !important;
+}
+
+/* Tab content elements */
+.gradio-box {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-primary) !important;
+    padding: 1.5rem !important; /* Inner padding for boxes inside tabs */
+    margin-bottom: 1.5rem !important;
+}
+
+/* Markdown and text elements inside tabs */
+.gradio-markdown {
+    padding: 0 0.5rem !important; /* Light padding for markdown content */
+}
+
+/* Group elements inside tabs */
+.gradio-group {
+    padding: 1rem !important; /* Padding for grouped elements */
+    margin-bottom: 1.5rem !important;
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+}
+
+/* Input elements inside tabs */
+.gradio-textbox,
+.gradio-dropdown,
+.gradio-slider {
+    margin-bottom: 1rem !important;
+    padding: 0.75rem !important;
+}
