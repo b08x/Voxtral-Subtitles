@@ -61,6 +61,8 @@ body {
     gap: 0.25rem;
     width: calc(100% + 2rem) !important;
     margin-left: -1rem !important;
+    border-radius: 12px 12px 0 0 !important;
+    background: var(--bg-secondary) !important;
 }
 
 /* Individual tab items */
@@ -90,7 +92,8 @@ body {
     border-top: none !important;
     margin-left: 0 !important;
     margin-right: 0 !important;
-    width: 100% !important;
+    width: calc(100% - 2rem) !important;
+    margin: 0 1rem !important;
 }
 
 /* Tab content elements */
@@ -100,6 +103,7 @@ body {
     color: var(--text-primary) !important;
     padding: 1.5rem !important;
     margin-bottom: 1.5rem !important;
+    border-radius: 8px !important;
 }
 
 /* Markdown and text elements inside tabs */
