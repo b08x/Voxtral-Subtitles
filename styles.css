@@ -44,7 +44,7 @@ body {
         linear-gradient(var(--border) 1px, transparent 1px),
         linear-gradient(90deg, var(--border) 1px, transparent 1px) !important;
     background-size: 40px 40px !important;
-    margin: 2rem auto !important;
+    margin: 0rem auto !important;
     padding: 2rem !important;
     width: calc(100% - 4rem) !important;
     max-width: 1400px !important;
@@ -55,7 +55,7 @@ body {
 
 /* Tabs container */
 .gradio-tabs {
-    padding: 0.5rem 0 !important; /* Light padding for the tabs bar */
+    padding: 0.5rem 0 !important;
 }
 
 /* Individual tab items */
@@ -63,14 +63,14 @@ body {
     background: var(--bg-secondary) !important;
     color: var(--text-tertiary) !important;
     border: none !important;
-    padding: 0.75rem 1.5rem !important; /* Padding inside each tab */
+    padding: 0.75rem 1.5rem !important;
     margin: 0 0.25rem !important;
     border-radius: 8px 8px 0 0 !important;
 }
 
 /* Tab content padding */
 .gradio-tab > div {
-    padding: 1.5rem !important; /* Padding inside the content of each tab */
+    padding: 1.5rem !important;
     background: var(--bg-card) !important;
     border-radius: 0 0 12px 12px !important;
     border: 1px solid var(--border) !important;
@@ -82,18 +82,18 @@ body {
     background: var(--bg-card) !important;
     border: 1px solid var(--border) !important;
     color: var(--text-primary) !important;
-    padding: 1.5rem !important; /* Inner padding for boxes inside tabs */
+    padding: 1.5rem !important;
     margin-bottom: 1.5rem !important;
 }
 
 /* Markdown and text elements inside tabs */
 .gradio-markdown {
-    padding: 0 0.5rem !important; /* Light padding for markdown content */
+    padding: 0 0.5rem !important;
 }
 
 /* Group elements inside tabs */
 .gradio-group {
-    padding: 1rem !important; /* Padding for grouped elements */
+    padding: 1rem !important;
     margin-bottom: 1.5rem !important;
     background: var(--bg-card) !important;
     border: 1px solid var(--border) !important;
