@@ -55,7 +55,7 @@ body {
 
 /* Tabs container */
 .gradio-tabs {
-    padding: 0.5rem 0 !important;
+    padding: 0 !important;
 }
 
 /* Individual tab items */
