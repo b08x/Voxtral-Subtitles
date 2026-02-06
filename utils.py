@@ -489,8 +489,9 @@ def translate(segments, target_language):
     """
     max_retries = 5
     retry_delay = 2  # seconds
-    
+    print(segments)
     str_segments = "\n".join([f"{seg["id"]}: {seg["content"]}" for id, seg in segments])
+    print(str_segments)
     input_length = len(segments)
 
     for attempt in range(max_retries):
@@ -518,6 +519,7 @@ def translate(segments, target_language):
             )
             
             translated_segments = json.loads(chat_response.choices[0].message.content)
+            print(translated_segments)
 
             assert len(translated_segments["segments"]) == input_length, (
                 f"Mismatch in segment count: input={input_length}, output={len(translated_segments['segments'])}"
