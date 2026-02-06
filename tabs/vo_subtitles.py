@@ -2,7 +2,6 @@ import gradio as gr
 import os
 import signal
 from functools import wraps
-from moviepy.editor import VideoFileClip
 from utils import *
 
 def timeout(seconds=300, error_message="Processing timed out after 5 minutes."):
@@ -21,14 +20,7 @@ def timeout(seconds=300, error_message="Processing timed out after 5 minutes."):
             return result
         return wrapper
     return decorator
-
-def check_video_duration(video_path, max_duration=300):
-    clip = VideoFileClip(video_path)
-    duration = clip.duration
-    clip.close()
-    if duration > max_duration:
-        raise ValueError(f"Video duration must be less than {max_duration} seconds.")
-
+    
 @timeout(seconds=300)
 def process_uploaded_video(
     video_file,
@@ -44,7 +36,6 @@ def process_uploaded_video(
 ):
     try:
         video_path = video_file.name
-        check_video_duration(video_path)
 
         cleanup_files()
         progress(0.1, desc="Extracting audio from video...")
