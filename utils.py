@@ -489,8 +489,8 @@ def translate(segments, target_language):
     """
     max_retries = 5
     retry_delay = 2  # seconds
-    print(segments)
-    str_segments = "\n".join([f"{id}: {seg.content}" for id, seg in enumerate(segments)])
+    
+    str_segments = "\n".join([f"{seg["id"]}: {seg["content"]}" for id, seg in segments])
     input_length = len(segments)
 
     for attempt in range(max_retries):
