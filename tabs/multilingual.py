@@ -1,25 +1,6 @@
 import gradio as gr
-import os
-import signal
-from functools import wraps
+import threading
 from utils import *
-
-def timeout(seconds=300, error_message="Processing timed out after 5 minutes."):
-    def decorator(func):
-        def _handle_timeout(signum, frame):
-            raise TimeoutError(error_message)
-
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            signal.signal(signal.SIGALRM, _handle_timeout)
-            signal.alarm(seconds)
-            try:
-                result = func(*args, **kwargs)
-            finally:
-                signal.alarm(0)
-            return result
-        return wrapper
-    return decorator
 
 def split_text_intelligently(text, max_length=80):
     """Split text intelligently, ensuring no segment exceeds max_length."""
@@ -87,7 +68,28 @@ def split_text_intelligently(text, max_length=80):
 
     return final_segments
 
-@timeout(seconds=300)
+def run_with_timeout(func, args, kwargs, timeout=300):
+    """Run a function with a timeout."""
+    result = [None]
+    error = [None]
+
+    def target():
+        try:
+            result[0] = func(*args, **kwargs)
+        except Exception as e:
+            error[0] = str(e)
+
+    thread = threading.Thread(target=target)
+    thread.start()
+    thread.join(timeout=timeout)
+
+    if thread.is_alive():
+        # If the thread is still running after the timeout, consider it failed
+        return None, "Processing timed out after 5 minutes."
+    if error[0]:
+        return None, error[0]
+    return result[0], None
+
 def process_uploaded_video_multilingual(
     video_file,
     target_language,
@@ -101,9 +103,9 @@ def process_uploaded_video_multilingual(
 ):
     try:
         print("=== Starting video processing ===")
+        cleanup_files()
         video_path = video_file.name
 
-        cleanup_files()
         progress(0.1, desc="Extracting audio from video...")
         audio_path = extract_audio_from_video(video_path)
 
@@ -119,10 +121,16 @@ def process_uploaded_video_multilingual(
             speaker = segment.get("speaker_id", "speaker_null")
             subtitles.append((start, end, text, speaker))
 
-        # Translate subtitles first
         progress(0.4, desc="Translating subtitles...")
-        segments = [Segment(id=idx, content=text) for idx, (_, _, text, _) in enumerate(subtitles)]
-        translated_segments = translate(segments, target_language)
+        segments = [{"id": idx, "content": text} for idx, (_, _, text, _) in enumerate(subtitles)]
+        translated_segments, translate_error = run_with_timeout(
+            lambda: translate(segments, target_language),
+            args=(),
+            kwargs={},
+            timeout=300
+        )
+        if translate_error:
+            raise Exception(translate_error)
 
         final_subtitles = []
         for (start, end, _, speaker), translated in zip(subtitles, translated_segments["segments"]):
@@ -192,34 +200,33 @@ def process_uploaded_video_multilingual(
             speaker_colors[first_speaker] = text_color
 
         progress(0.5, desc="Generating overlay...")
-        processed_video = overlay_subtitles(
-            video_path,
-            audio_path,
-            final_subtitles,
-            font_size,
-            background_style,
-            alignment,
-            text_color,
-            speaker_colors,
-            text_color,
-            font_name,
-            progress=progress,
-            add_logo=True
+        processed_video, overlay_error = run_with_timeout(
+            lambda: overlay_subtitles(
+                video_path,
+                audio_path,
+                final_subtitles,
+                font_size,
+                background_style,
+                alignment,
+                text_color,
+                speaker_colors,
+                text_color,
+                font_name,
+                progress=progress,
+                add_logo=True
+            ),
+            args=(),
+            kwargs={},
+            timeout=300
         )
+        if overlay_error:
+            raise Exception(overlay_error)
 
         raw_subtitles_html = generate_raw_subtitles_html(final_subtitles, speaker_colors)
 
         progress(1.0, desc="Done.")
         return processed_video, None, gr.HTML(visible=True, value=raw_subtitles_html)
 
-    except TimeoutError as e:
-        cleanup_files()
-        progress(0, desc=str(e))
-        return None, str(e), gr.HTML(visible=False)
-    except ValueError as e:
-        cleanup_files()
-        progress(0, desc=str(e))
-        return None, str(e), gr.HTML(visible=False)
     except Exception as e:
         import traceback
         print(f"\nERROR: {str(e)}")
