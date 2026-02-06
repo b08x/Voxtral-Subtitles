@@ -2,6 +2,27 @@ import gradio as gr
 import threading
 from utils import *
 
+def run_with_timeout(func, args=(), kwargs={}, timeout=300):
+    """Run a function with a timeout."""
+    result = [None]
+    error = [None]
+
+    def target():
+        try:
+            result[0] = func(*args, **kwargs)
+        except Exception as e:
+            error[0] = str(e)
+
+    thread = threading.Thread(target=target)
+    thread.start()
+    thread.join(timeout=timeout)
+
+    if thread.is_alive():
+        return None, "Processing timed out after 5 minutes."
+    if error[0]:
+        return None, error[0]
+    return result[0], None
+
 def split_text_intelligently(text, max_length=80):
     """Split text intelligently, ensuring no segment exceeds max_length."""
     segments = []
@@ -68,28 +89,6 @@ def split_text_intelligently(text, max_length=80):
 
     return final_segments
 
-def run_with_timeout(func, args, kwargs, timeout=300):
-    """Run a function with a timeout."""
-    result = [None]
-    error = [None]
-
-    def target():
-        try:
-            result[0] = func(*args, **kwargs)
-        except Exception as e:
-            error[0] = str(e)
-
-    thread = threading.Thread(target=target)
-    thread.start()
-    thread.join(timeout=timeout)
-
-    if thread.is_alive():
-        # If the thread is still running after the timeout, consider it failed
-        return None, "Processing timed out after 5 minutes."
-    if error[0]:
-        return None, error[0]
-    return result[0], None
-
 def process_uploaded_video_multilingual(
     video_file,
     target_language,
@@ -107,10 +106,20 @@ def process_uploaded_video_multilingual(
         video_path = video_file.name
 
         progress(0.1, desc="Extracting audio from video...")
-        audio_path = extract_audio_from_video(video_path)
+        audio_path, extract_error = run_with_timeout(
+            lambda: extract_audio_from_video(video_path),
+            timeout=300
+        )
+        if extract_error:
+            raise Exception(extract_error)
 
         progress(0.2, desc="Transcribing audio with segment granularity...")
-        transcription = transcribe_audio(audio_path, granularity="segment", diarize=diarize)
+        transcription, transcribe_error = run_with_timeout(
+            lambda: transcribe_audio(audio_path, granularity="segment", diarize=diarize),
+            timeout=300
+        )
+        if transcribe_error:
+            raise Exception(transcribe_error)
 
         progress(0.3, desc="Generating subtitles...")
         subtitles = []
@@ -125,8 +134,6 @@ def process_uploaded_video_multilingual(
         segments = [{"id": idx, "content": text} for idx, (_, _, text, _) in enumerate(subtitles)]
         translated_segments, translate_error = run_with_timeout(
             lambda: translate(segments, target_language),
-            args=(),
-            kwargs={},
             timeout=300
         )
         if translate_error:
@@ -215,8 +222,6 @@ def process_uploaded_video_multilingual(
                 progress=progress,
                 add_logo=True
             ),
-            args=(),
-            kwargs={},
             timeout=300
         )
         if overlay_error:
