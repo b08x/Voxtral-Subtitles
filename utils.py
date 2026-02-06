@@ -513,11 +513,13 @@ def translate(segments, target_language):
                     },
                 ],
                 response_format=TranslatedSegments,
-                max_tokens=4096,
+                max_tokens=9192,
                 temperature=0,
             )
             
             translated_segments = json.loads(chat_response.choices[0].message.content)
+
+            print(translated_segments)
 
             assert len(translated_segments["segments"]) == input_length, (
                 f"Mismatch in segment count: input={input_length}, output={len(translated_segments['segments'])}"
