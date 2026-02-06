@@ -1,27 +1,29 @@
 import gradio as gr
-import os
-import signal
-from functools import wraps
+import threading
 from utils import *
 
-def timeout(seconds=300, error_message="Processing timed out after 5 minutes."):
-    def decorator(func):
-        def _handle_timeout(signum, frame):
-            raise TimeoutError(error_message)
+def run_with_timeout(func, args, kwargs, timeout=300):
+    """Run a function with a timeout."""
+    result = [None]
+    error = [None]
 
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            signal.signal(signal.SIGALRM, _handle_timeout)
-            signal.alarm(seconds)
-            try:
-                result = func(*args, **kwargs)
-            finally:
-                signal.alarm(0)
-            return result
-        return wrapper
-    return decorator
-    
-@timeout(seconds=300)
+    def target():
+        try:
+            result[0] = func(*args, **kwargs)
+        except Exception as e:
+            error[0] = str(e)
+
+    thread = threading.Thread(target=target)
+    thread.start()
+    thread.join(timeout=timeout)
+
+    if thread.is_alive():
+        # If the thread is still running after the timeout, consider it failed
+        return None, "Processing timed out after 5 minutes."
+    if error[0]:
+        return None, error[0]
+    return result[0], None
+
 def process_uploaded_video(
     video_file,
     diarize,
@@ -35,23 +37,57 @@ def process_uploaded_video(
     progress=gr.Progress()
 ):
     try:
-        video_path = video_file.name
-
         cleanup_files()
+        video_path = video_file.name
         progress(0.1, desc="Extracting audio from video...")
-        audio_path = extract_audio_from_video(video_path)
+        audio_path, extract_error = run_with_timeout(
+            lambda: extract_audio_from_video(video_path),
+            args=(),
+            kwargs={},
+            timeout=300
+        )
+        if extract_error:
+            raise Exception(extract_error)
 
         progress(0.2, desc="Transcribing audio with segment granularity for diarization...")
-        segment_transcription = transcribe_audio(audio_path, granularity="segment", diarize=True)
+        segment_transcription, transcribe_segment_error = run_with_timeout(
+            lambda: transcribe_audio(audio_path, granularity="segment", diarize=True),
+            args=(),
+            kwargs={},
+            timeout=300
+        )
+        if transcribe_segment_error:
+            raise Exception(transcribe_segment_error)
 
         progress(0.3, desc="Transcribing audio with word granularity...")
-        word_transcription = transcribe_audio(audio_path, granularity="word")
+        word_transcription, transcribe_word_error = run_with_timeout(
+            lambda: transcribe_audio(audio_path, granularity="word"),
+            args=(),
+            kwargs={},
+            timeout=300
+        )
+        if transcribe_word_error:
+            raise Exception(transcribe_word_error)
 
         if diarize:
-            word_transcription["segments"] = match_words_to_speakers(segment_transcription, word_transcription)
+            word_transcription["segments"], match_error = run_with_timeout(
+                lambda: match_words_to_speakers(segment_transcription, word_transcription),
+                args=(),
+                kwargs={},
+                timeout=300
+            )
+            if match_error:
+                raise Exception(match_error)
 
         progress(0.4, desc="Generating subtitles...")
-        subtitles = generate_subtitles(word_transcription, segment_transcription)
+        subtitles, generate_error = run_with_timeout(
+            lambda: generate_subtitles(word_transcription, segment_transcription),
+            args=(),
+            kwargs={},
+            timeout=300
+        )
+        if generate_error:
+            raise Exception(generate_error)
 
         unique_speakers = []
         for _, _, _, word_segments, _ in subtitles:
@@ -85,20 +121,27 @@ def process_uploaded_video(
         speaker_colors["speaker_null"] = text_color
 
         progress(0.5, desc="Generating overlay...")
-        processed_video = overlay_subtitles(
-            video_path,
-            audio_path,
-            subtitles,
-            font_size,
-            background_style,
-            alignment,
-            text_color,
-            speaker_colors,
-            incoming_color,
-            font_name,
-            progress=progress,
-            add_logo=True
+        processed_video, overlay_error = run_with_timeout(
+            lambda: overlay_subtitles(
+                video_path,
+                audio_path,
+                subtitles,
+                font_size,
+                background_style,
+                alignment,
+                text_color,
+                speaker_colors,
+                incoming_color,
+                font_name,
+                progress=progress,
+                add_logo=True
+            ),
+            args=(),
+            kwargs={},
+            timeout=300
         )
+        if overlay_error:
+            raise Exception(overlay_error)
 
         raw_subtitles_html = generate_raw_subtitles_html(subtitles, speaker_colors)
 
@@ -111,14 +154,6 @@ def process_uploaded_video(
         progress(1.0, desc="Done.")
         return processed_video, None, gr.HTML(visible=True, value=raw_subtitles_html)
 
-    except TimeoutError as e:
-        cleanup_files()
-        progress(0, desc=str(e))
-        return None, str(e), gr.HTML(visible=False)
-    except ValueError as e:
-        cleanup_files()
-        progress(0, desc=str(e))
-        return None, str(e), gr.HTML(visible=False)
     except Exception as e:
         cleanup_files()
         progress(0, desc="Failed to process video.")
