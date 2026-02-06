@@ -7,4 +7,3 @@ mistralai>=1.12.0
 pysubs2
 levenshtein
 opencv-python
-moviepy
