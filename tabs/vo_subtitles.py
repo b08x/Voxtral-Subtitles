@@ -1,6 +1,35 @@
 import gradio as gr
+import os
+import signal
+from functools import wraps
+from moviepy.editor import VideoFileClip
 from utils import *
 
+def timeout(seconds=300, error_message="Processing timed out after 5 minutes."):
+    def decorator(func):
+        def _handle_timeout(signum, frame):
+            raise TimeoutError(error_message)
+
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            signal.signal(signal.SIGALRM, _handle_timeout)
+            signal.alarm(seconds)
+            try:
+                result = func(*args, **kwargs)
+            finally:
+                signal.alarm(0)
+            return result
+        return wrapper
+    return decorator
+
+def check_video_duration(video_path, max_duration=300):
+    clip = VideoFileClip(video_path)
+    duration = clip.duration
+    clip.close()
+    if duration > max_duration:
+        raise ValueError(f"Video duration must be less than {max_duration} seconds.")
+
+@timeout(seconds=300)
 def process_uploaded_video(
     video_file,
     diarize,
@@ -14,8 +43,10 @@ def process_uploaded_video(
     progress=gr.Progress()
 ):
     try:
-        cleanup_files()
         video_path = video_file.name
+        check_video_duration(video_path)
+
+        cleanup_files()
         progress(0.1, desc="Extracting audio from video...")
         audio_path = extract_audio_from_video(video_path)
 
@@ -89,6 +120,14 @@ def process_uploaded_video(
         progress(1.0, desc="Done.")
         return processed_video, None, gr.HTML(visible=True, value=raw_subtitles_html)
 
+    except TimeoutError as e:
+        cleanup_files()
+        progress(0, desc=str(e))
+        return None, str(e), gr.HTML(visible=False)
+    except ValueError as e:
+        cleanup_files()
+        progress(0, desc=str(e))
+        return None, str(e), gr.HTML(visible=False)
     except Exception as e:
         cleanup_files()
         progress(0, desc="Failed to process video.")
