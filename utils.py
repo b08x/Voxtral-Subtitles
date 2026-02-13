@@ -7,6 +7,7 @@ from pysubs2 import SSAFile, SSAEvent
 import Levenshtein
 from pydantic import BaseModel
 from mistralai import Mistral
+from mistralai.models import File
 
 # Load API key from environment variable
 api_key = os.getenv("MISTRAL_API_KEY")
@@ -145,10 +146,13 @@ def transcribe_audio(audio_path, granularity="word", diarize=False):
     for i in range(max_retries):
         try:
             with open(audio_path, "rb") as audio_file:
-                # Use the official Mistral SDK client
+                # Use the official Mistral SDK client with a structured File object
                 response = client.audio.transcriptions.complete(
                     model=model,
-                    file=audio_file,
+                    file=File(
+                        file_name=os.path.basename(audio_path),
+                        content=audio_file,
+                    ),
                     timestamp_granularities=[granularity] if granularity else None,
                     diarize=diarize,
                 )
