@@ -15,46 +15,128 @@ if not api_key:
     raise ValueError("No Mistral API key found.")
 
 client = Mistral(api_key=api_key)
-model = "voxtral-mini-2602"
+model = "voxtral-mini-latest"
 translation_model = "mistral-small-latest"
+
 
 class Segment(BaseModel):
     id: int
     content: str
 
+
 class TranslatedSegments(BaseModel):
     segments: list[Segment]
+
+
+TEMP_DIR = os.getenv("TEMP_DIR", ".")
+
 
 def cleanup_files():
     """Remove all temporary and output files."""
     try:
-        files_to_clean = ["temp_video.mp4", "temp_audio.mp3", "subtitles.srt", "subtitles.ass", "output_video.mp4", "voxtral_output.mp4", "scribe_output.mp4", "gpt4o_output.mp4"]
+        files_to_clean = [
+            os.path.join(TEMP_DIR, f)
+            for f in [
+                "temp_video.mp4",
+                "temp_audio.mp3",
+                "subtitles.srt",
+                "subtitles.ass",
+                "output_video.mp4",
+                "voxtral_output.mp4",
+                "scribe_output.mp4",
+                "gpt4o_output.mp4",
+            ]
+        ]
         for file in files_to_clean:
             if os.path.exists(file):
                 os.remove(file)
     except Exception as e:
         print(e)
 
+
 def extract_audio_from_video(video_path):
     """Extract audio from video or return the audio path if the input is already an audio file."""
-    audio_path = "temp_audio.mp3"
-    audio_extensions = {'.mp3', '.wav', '.ogg', '.flac', '.aac'}
+    audio_path = os.path.join(TEMP_DIR, "temp_audio.mp3")
+    audio_extensions = {".mp3", ".wav", ".ogg", ".flac", ".aac"}
 
     if os.path.splitext(video_path)[1].lower() in audio_extensions:
         return video_path
 
     try:
+        # Use absolute path for FFmpeg output
+        abs_audio_path = os.path.abspath(audio_path)
+
+        # 1. Detect if audio stream exists
+        probe_cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "csv=p=0",
+            video_path,
+        ]
+        probe_result = subprocess.run(probe_cmd, capture_output=True, text=True)
+        has_audio = "audio" in probe_result.stdout.lower()
+
+        if has_audio:
+            # Normal extraction
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-y",
+                "-i",
+                video_path,
+                "-vn",
+                "-acodec",
+                "libmp3lame",
+                "-q:a",
+                "2",
+                abs_audio_path,
+            ]
+        else:
+            # Video has no audio stream; generate a silent audio track
+            duration = get_video_duration(video_path)
+            print(f"No audio stream detected. Generating {duration}s of silence.")
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                f"anullsrc=channel_layout=mono:sample_rate=44100",
+                "-t",
+                str(duration),
+                "-acodec",
+                "libmp3lame",
+                "-q:a",
+                "2",
+                abs_audio_path,
+            ]
+
         subprocess.run(
-            ["ffmpeg", "-y", "-i", video_path, "-vn", "-acodec", "libmp3lame", "-q:a", "2", audio_path],
+            ffmpeg_cmd,
             check=True,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
         )
         return audio_path
+    except subprocess.CalledProcessError as e:
+        print(f"FFmpeg Error (Extraction): {e.stderr}")
+        cleanup_files()
+        raise Exception(f"Failed to extract audio: {e.stderr}")
     except Exception as e:
-        print(e)
+        print(f"General Error (Extraction): {str(e)}")
         cleanup_files()
         raise Exception(f"Failed to extract audio: {str(e)}")
+
 
 def transcribe_audio(audio_path, granularity="word", diarize=False):
     """Transcribe audio using Mistral API with the selected granularity and optional diarization."""
@@ -74,12 +156,17 @@ def transcribe_audio(audio_path, granularity="word", diarize=False):
                 response = requests.post(url, headers=headers, files=files, data=data)
                 response.raise_for_status()
                 transcription_response = response.json()
-                print(f"\n####\n\n- Granularity: {granularity}\n- Diarize: {diarize}\n- Response:\n", transcription_response, "\n\n####\n")
+                print(
+                    f"\n####\n\n- Granularity: {granularity}\n- Diarize: {diarize}\n- Response:\n",
+                    transcription_response,
+                    "\n\n####\n",
+                )
             return transcription_response
         except Exception as e:
             time.sleep(delay_time)
             print(e)
     raise Exception(f"Failed to transcribe audio: {str(e)}")
+
 
 def split_segments_by_segment_boundaries(word_segments, segment_segments):
     if not word_segments or not segment_segments:
@@ -88,9 +175,14 @@ def split_segments_by_segment_boundaries(word_segments, segment_segments):
     segment_segments = sorted(segment_segments, key=lambda x: x["start"])
     segment_groups, current_segment_index, current_group = [], 0, []
     for word in word_segments:
-        while (current_segment_index < len(segment_segments) and word["start"] >= segment_segments[current_segment_index]["end"]):
+        while (
+            current_segment_index < len(segment_segments)
+            and word["start"] >= segment_segments[current_segment_index]["end"]
+        ):
             if current_group:
-                segment_groups.extend(split_group_by_punctuation_and_time(current_group))
+                segment_groups.extend(
+                    split_group_by_punctuation_and_time(current_group)
+                )
                 current_group = []
             current_segment_index += 1
             if current_segment_index >= len(segment_segments):
@@ -101,6 +193,7 @@ def split_segments_by_segment_boundaries(word_segments, segment_segments):
         segment_groups.extend(split_group_by_punctuation_and_time(current_group))
     return concatenate_short_segments(segment_groups)
 
+
 def split_group_by_punctuation_and_time(group):
     if not group:
         return []
@@ -110,13 +203,15 @@ def split_group_by_punctuation_and_time(group):
     current_length = len(group[0]["text"])
 
     for i in range(1, len(group)):
-        prev_word, current_word = group[i-1], group[i]
+        prev_word, current_word = group[i - 1], group[i]
         if current_length + len(current_word["text"]) + 1 > 80:
             sub_groups.append(current_sub_group)
             current_sub_group = [current_word]
             current_length = len(current_word["text"])
         else:
-            if prev_word["text"][-1] in {'.', ',', '!', '?'} or (current_word["start"] - prev_word["end"] > 0.3):
+            if prev_word["text"][-1] in {".", ",", "!", "?"} or (
+                current_word["start"] - prev_word["end"] > 0.3
+            ):
                 sub_groups.append(current_sub_group)
                 current_sub_group = [current_word]
                 current_length = len(current_word["text"])
@@ -138,7 +233,7 @@ def split_group_by_punctuation_and_time(group):
                 max_gap_index = 0
                 max_gap = 0
                 for j in range(1, len(group)):
-                    gap = group[j]["start"] - group[j-1]["end"]
+                    gap = group[j]["start"] - group[j - 1]["end"]
                     if gap > max_gap:
                         max_gap = gap
                         max_gap_index = j
@@ -152,6 +247,7 @@ def split_group_by_punctuation_and_time(group):
 
     return final_groups
 
+
 def concatenate_short_segments(groups):
     concatenated_groups, current_group = [], []
     for group in groups:
@@ -159,7 +255,7 @@ def concatenate_short_segments(groups):
             current_group = group
         else:
             last_word_text = current_group[-1]["text"]
-            if last_word_text[-1] in {'.', '!', '?'}:
+            if last_word_text[-1] in {".", "!", "?"}:
                 concatenated_groups.append(current_group)
                 current_group = group
             else:
@@ -174,17 +270,21 @@ def concatenate_short_segments(groups):
         concatenated_groups.append(current_group)
     return concatenated_groups
 
+
 def match_words_to_speakers(segment_transcription, word_transcription):
     speaker_segments = segment_transcription.get("segments", [])
     word_segments = word_transcription.get("segments", [])
-    first_speaker = speaker_segments[0].get("speaker_id") if speaker_segments else "speaker_null"
+    first_speaker = (
+        speaker_segments[0].get("speaker_id") if speaker_segments else "speaker_null"
+    )
 
     for word in word_segments:
         word_start, word_end = word["start"], word["end"]
 
         if word_start == word_end:
             containing_segments = [
-                seg for seg in speaker_segments
+                seg
+                for seg in speaker_segments
                 if seg["start"] <= word_start <= seg["end"]
             ]
             if containing_segments:
@@ -194,9 +294,8 @@ def match_words_to_speakers(segment_transcription, word_transcription):
         closest_segment = min(
             speaker_segments,
             key=lambda seg: min(
-                abs(word_start - seg["start"]),
-                abs(word_end - seg["end"])
-            )
+                abs(word_start - seg["start"]), abs(word_end - seg["end"])
+            ),
         )
         word["speaker_id"] = closest_segment.get("speaker_id")
 
@@ -205,11 +304,20 @@ def match_words_to_speakers(segment_transcription, word_transcription):
             prev_word = word_segments[i - 1] if i > 0 else None
             next_word = word_segments[i + 1] if i < len(word_segments) - 1 else None
 
-            if prev_word and next_word and prev_word.get("speaker_id") == next_word.get("speaker_id"):
+            if (
+                prev_word
+                and next_word
+                and prev_word.get("speaker_id") == next_word.get("speaker_id")
+            ):
                 word["speaker_id"] = prev_word["speaker_id"]
             elif prev_word or next_word:
                 if prev_word and next_word:
-                    closest_word = prev_word if (word_start - prev_word["end"]) < (next_word["start"] - word_end) else next_word
+                    closest_word = (
+                        prev_word
+                        if (word_start - prev_word["end"])
+                        < (next_word["start"] - word_end)
+                        else next_word
+                    )
                     word["speaker_id"] = closest_word["speaker_id"]
                 elif prev_word:
                     word["speaker_id"] = prev_word["speaker_id"]
@@ -219,9 +327,8 @@ def match_words_to_speakers(segment_transcription, word_transcription):
                 closest_segment = min(
                     speaker_segments,
                     key=lambda seg: min(
-                        abs(word_start - seg["start"]),
-                        abs(word_end - seg["end"])
-                    )
+                        abs(word_start - seg["start"]), abs(word_end - seg["end"])
+                    ),
                 )
                 word["speaker_id"] = closest_segment.get("speaker_id")
 
@@ -231,24 +338,39 @@ def match_words_to_speakers(segment_transcription, word_transcription):
 
     return word_segments
 
+
 def hex_to_bgr(hex_color):
-    hex_color = hex_color.lstrip('#')
+    hex_color = hex_color.lstrip("#")
     bgr = hex_color[4:6] + hex_color[2:4] + hex_color[0:2]
     return f"&H{bgr}&"
 
+
 def generate_subtitles(transcription_response, segment_transcription):
-    subtitles, word_segments, segment_segments = [], transcription_response.get("segments", []), segment_transcription.get("segments", [])
+    subtitles, word_segments, segment_segments = (
+        [],
+        transcription_response.get("segments", []),
+        segment_transcription.get("segments", []),
+    )
     if not word_segments or not segment_segments:
         return subtitles
-    segment_groups = split_segments_by_segment_boundaries(word_segments, segment_segments)
-    first_speaker = segment_segments[0].get("speaker_id") if segment_segments else "speaker_null"
+    segment_groups = split_segments_by_segment_boundaries(
+        word_segments, segment_segments
+    )
+    first_speaker = (
+        segment_segments[0].get("speaker_id") if segment_segments else "speaker_null"
+    )
     for group in segment_groups:
         if not group:
             continue
-        start, end, text = group[0]["start"], group[-1]["end"], " ".join([seg["text"] for seg in group])
+        start, end, text = (
+            group[0]["start"],
+            group[-1]["end"],
+            " ".join([seg["text"] for seg in group]),
+        )
         speaker = group[0].get("speaker_id", first_speaker)
         subtitles.append((start, end, text, group, speaker))
     return subtitles
+
 
 def create_ass_file(
     subtitles,
@@ -258,13 +380,13 @@ def create_ass_file(
     speaker_colors=None,
     incoming_color="#808080",
     font_name="Liberation Sans",
-    alignment="Bottom Center"
+    alignment="Bottom Center",
 ):
     sub = SSAFile()
     style = sub.styles["Default"]
     style.fontname = font_name
     style.fontsize = font_size
-    style.primarycolor = int(text_color.lstrip('#'), 16)
+    style.primarycolor = int(text_color.lstrip("#"), 16)
     style.outlinecolor = 0x000000
     style.bold = False
     style.italic = False
@@ -294,7 +416,6 @@ def create_ass_file(
 
     total_subtitles = len(subtitles)
     for i, subtitle in enumerate(subtitles, start=1):
-
         if has_word_granularity:
             start, end, text, word_segments, speaker = subtitle
         else:
@@ -306,12 +427,20 @@ def create_ass_file(
             for j, word_seg in enumerate(word_segments):
                 line = SSAEvent()
                 line.start = int(word_seg["start"] * 1000)
-                line.end = int(word_segments[j + 1]["start"] * 1000) if j < len(word_segments) - 1 else int(word_seg["end"] * 1000)
+                line.end = (
+                    int(word_segments[j + 1]["start"] * 1000)
+                    if j < len(word_segments) - 1
+                    else int(word_seg["end"] * 1000)
+                )
                 line.style = "Default"
                 ass_text = ""
                 for k, w in enumerate(word_segments):
                     speaker_id = w.get("speaker_id", first_speaker)
-                    bgr_highlight = hex_to_bgr(speaker_colors.get(speaker_id, speaker_colors.get(first_speaker, text_color)))
+                    bgr_highlight = hex_to_bgr(
+                        speaker_colors.get(
+                            speaker_id, speaker_colors.get(first_speaker, text_color)
+                        )
+                    )
                     if k == j:
                         ass_text += f"{{\\c{bgr_highlight}}}{w['text']} "
                     else:
@@ -332,10 +461,23 @@ def create_ass_file(
 
     sub.save(srt_path)
 
+
 def get_video_duration(video_path):
-    cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", video_path]
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        video_path,
+    ]
+    result = subprocess.run(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
     return float(result.stdout.strip())
+
 
 def overlay_subtitles(
     video_path,
@@ -353,7 +495,7 @@ def overlay_subtitles(
     add_logo=False,
     logo_path="videologo.png",
     logo_scale=0.5,
-    padding=10
+    padding=10,
 ):
     """
     Overlays subtitles on the video, with an option to add a logo in the bottom right corner.
@@ -365,19 +507,52 @@ def overlay_subtitles(
         padding (int): Padding around the logo (default: 10).
     """
     try:
-        ass_path = "subtitles.ass"
-        create_ass_file(subtitles, ass_path, font_size, text_color, speaker_colors, incoming_color, font_name, alignment)
+        ass_path = os.path.join(TEMP_DIR, "subtitles.ass")
+        create_ass_file(
+            subtitles,
+            ass_path,
+            font_size,
+            text_color,
+            speaker_colors,
+            incoming_color,
+            font_name,
+            alignment,
+        )
 
+        output_path = os.path.join(TEMP_DIR, "output_video.mp4")
         if os.path.exists(output_path):
             os.remove(output_path)
-            
+
         total_duration = get_video_duration(video_path)
+        abs_ass_path = os.path.abspath(ass_path)
+        abs_output_path = os.path.abspath(output_path)
+
+        # Determine video encoder based on hardware availability
+        video_encoder = "libx264"
+        compute_device = os.getenv("COMPUTE_DEVICE", "CPU")
+        if compute_device == "CUDA":
+            video_encoder = "h264_nvenc"
+
         cmd = [
-            "ffmpeg", "-y", "-i", video_path, "-i", audio_path,
-            "-vf", f"ass={ass_path}",
-            "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "copy", "-strict", "experimental",
-            output_path
+            "ffmpeg",
+            "-y",
+            "-i",
+            video_path,
+            "-i",
+            audio_path,
+            "-vf",
+            f"ass={abs_ass_path}",
+            "-c:v",
+            video_encoder,
+            "-preset",
+            "ultrafast",
+            "-c:a",
+            "copy",
+            "-strict",
+            "experimental",
+            abs_output_path,
         ]
+
         process = subprocess.Popen(cmd, stderr=subprocess.PIPE, universal_newlines=True)
         stderr_output = []
         for line in process.stderr:
@@ -386,10 +561,15 @@ def overlay_subtitles(
             if time_match:
                 hours, minutes, seconds = time_match.groups()
                 current_time = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
-                progress(0.5 + (0.5 * (current_time / total_duration)), desc=f"Overlay creation...")
+                progress(
+                    0.5 + (0.5 * (current_time / total_duration)),
+                    desc=f"Overlay creation...",
+                )
         process.wait()
         if process.returncode != 0:
-            raise Exception(f"FFmpeg failed to overlay subtitles. Error: {''.join(stderr_output)}")
+            raise Exception(
+                f"FFmpeg failed to overlay subtitles. Error: {''.join(stderr_output)}"
+            )
 
         return output_path
     except Exception as e:
@@ -410,8 +590,12 @@ def generate_raw_subtitles_html(subtitles, speaker_colors, show_timestamps=True)
                 start, end, text, speaker = sub
                 word_segments = None
 
-            start_time = f"{int(start // 3600):02d}:{int((start % 3600) // 60):02d}:{start % 60:06.3f}".replace('.', ',')
-            end_time = f"{int(end // 3600):02d}:{int((end % 3600) // 60):02d}:{end % 60:06.3f}".replace('.', ',')
+            start_time = f"{int(start // 3600):02d}:{int((start % 3600) // 60):02d}:{start % 60:06.3f}".replace(
+                ".", ","
+            )
+            end_time = f"{int(end // 3600):02d}:{int((end % 3600) // 60):02d}:{end % 60:06.3f}".replace(
+                ".", ","
+            )
             html += f"<div style='margin-bottom: 8px;'><span style='color: #808080;'>{start_time} --> {end_time}</span> "
 
             if word_segments:
@@ -446,7 +630,11 @@ def generate_raw_subtitles_html(subtitles, speaker_colors, show_timestamps=True)
             if not word_segments:
                 continue
 
-            current_speaker = word_segments[0].get("speaker_id", speaker) if word_segments else speaker
+            current_speaker = (
+                word_segments[0].get("speaker_id", speaker)
+                if word_segments
+                else speaker
+            )
             color = speaker_colors.get(current_speaker, "#FFFFFF")
 
             if current_speaker != prev_speaker and prev_speaker is not None:
@@ -475,6 +663,7 @@ def generate_raw_subtitles_html(subtitles, speaker_colors, show_timestamps=True)
     html += "</div>"
     return html
 
+
 def translate(segments, target_language):
     """
     Translates a list of segments into the target language using the Mistral API.
@@ -490,7 +679,7 @@ def translate(segments, target_language):
     max_retries = 5
     retry_delay = 2  # seconds
     print(segments)
-    str_segments = "\n".join([f"{seg["id"]}: {seg["content"]}" for seg in segments])
+    str_segments = "\n".join([f"{seg['id']}: {seg['content']}" for seg in segments])
     print(str_segments)
     input_length = len(segments)
 
@@ -505,7 +694,7 @@ def translate(segments, target_language):
                             "You are a segment translation system. "
                             "You must translate a list of segments into their translation in a target language. "
                             "The translation must keeo the exact same length of segments, and not modify the contents, provide only the accurate translation. "
-                            "You must answer with the following format: {\"segments\": [{\"id\": int, \"content\": str}, ...]}"
+                            'You must answer with the following format: {"segments": [{"id": int, "content": str}, ...]}'
                         ),
                     },
                     {
@@ -517,7 +706,7 @@ def translate(segments, target_language):
                 max_tokens=9192,
                 temperature=0,
             )
-            
+
             translated_segments = json.loads(chat_response.choices[0].message.content)
             print(translated_segments)
 
@@ -530,5 +719,7 @@ def translate(segments, target_language):
         except Exception as e:
             print(e)
             if attempt == max_retries - 1:
-                raise Exception(f"Failed to translate after {max_retries} attempts. Error: {str(e)}")
+                raise Exception(
+                    f"Failed to translate after {max_retries} attempts. Error: {str(e)}"
+                )
             time.sleep(retry_delay)

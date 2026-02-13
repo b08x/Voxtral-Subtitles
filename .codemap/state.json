@@ -1,0 +1,40 @@
+{
+  "updated_at": "2026-02-13T15:19:40.99008354-05:00",
+  "file_count": 20,
+  "hubs": [
+    "utils.py"
+  ],
+  "importers": {
+    "tabs/multilingual.py": [
+      "app.py"
+    ],
+    "tabs/transcription.py": [
+      "app.py"
+    ],
+    "tabs/vo_subtitles.py": [
+      "app.py"
+    ],
+    "utils.py": [
+      "tabs/multilingual.py",
+      "tabs/transcription.py",
+      "tabs/vo_subtitles.py"
+    ]
+  },
+  "imports": {
+    "app.py": [
+      "tabs/vo_subtitles.py",
+      "tabs/multilingual.py",
+      "tabs/transcription.py"
+    ],
+    "tabs/multilingual.py": [
+      "utils.py"
+    ],
+    "tabs/transcription.py": [
+      "utils.py"
+    ],
+    "tabs/vo_subtitles.py": [
+      "utils.py"
+    ]
+  },
+  "recent_events": []
+}

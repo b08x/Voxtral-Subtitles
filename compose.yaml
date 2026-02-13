@@ -1,0 +1,49 @@
+# Voxtral-Subtitles Docker Compose
+#
+# Usage:
+#   Default:      docker compose up -d
+#   NVIDIA GPU:   docker compose --profile nvidia up -d
+#   Intel iGPU:   docker compose --profile intel up -d
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: voxtral-subtitles
+    # Including profiles for hardware-adaptive consistency
+    profiles: [cpu, nvidia, intel]
+    ports:
+      - "${APP_PORT:-7860}:7860"
+    env_file: .env
+    environment:
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
+    restart: unless-stopped
+    networks:
+      - voxtral-network
+
+  # NVIDIA-specific profile for potential GPU acceleration (OpenCV/FFmpeg)
+  app-nvidia:
+    extends: app
+    profiles: [nvidia]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # Intel-specific profile for iGPU acceleration
+  app-intel:
+    extends: app
+    profiles: [intel]
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+
+networks:
+  voxtral-network:
+    driver: bridge
