@@ -146,12 +146,9 @@ def transcribe_audio(audio_path, granularity="word", diarize=False):
         try:
             with open(audio_path, "rb") as audio_file:
                 # Use the official Mistral SDK client
-                response = client.audio.transcriptions.create(
+                response = client.audio.transcriptions.complete(
                     model=model,
-                    file={
-                        "content": audio_file,
-                        "file_name": os.path.basename(audio_path),
-                    },
+                    file=audio_file,
                     timestamp_granularities=[granularity] if granularity else None,
                     diarize=diarize,
                 )
@@ -713,7 +710,19 @@ def translate(segments, target_language):
                 temperature=0,
             )
 
-            translated_segments = json.loads(chat_response.choices[0].message.content)
+            # The Mistral SDK's parse method returns a parsed object directly
+            translated_segments = chat_response.choices[0].message.parsed
+
+            # If for some reason it's None, fall back to content
+            if translated_segments is None:
+                translated_segments = json.loads(
+                    chat_response.choices[0].message.content
+                )
+
+            # If it's a Pydantic model, convert to dict
+            if hasattr(translated_segments, "model_dump"):
+                translated_segments = translated_segments.model_dump()
+
             print(translated_segments)
 
             assert len(translated_segments["segments"]) == input_length, (
