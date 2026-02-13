@@ -3,7 +3,6 @@ import subprocess
 import re
 import json
 import time
-import requests
 from pysubs2 import SSAFile, SSAEvent
 import Levenshtein
 from pydantic import BaseModel
@@ -139,23 +138,27 @@ def extract_audio_from_video(video_path):
 
 
 def transcribe_audio(audio_path, granularity="word", diarize=False):
-    """Transcribe audio using Mistral API with the selected granularity and optional diarization."""
+    """Transcribe audio using Mistral SDK with the selected granularity and optional diarization."""
     max_retries = 5
     delay_time = 2
+    last_error = None
     for i in range(max_retries):
         try:
             with open(audio_path, "rb") as audio_file:
-                url = "https://api.mistral.ai/v1/audio/transcriptions"
-                headers = {"x-api-key": api_key}
-                files = {"file": ("audio.mp3", audio_file)}
-                data = {"model": model}
-                if granularity:
-                    data["timestamp_granularities[]"] = granularity
-                if diarize:
-                    data["diarize"] = "true"
-                response = requests.post(url, headers=headers, files=files, data=data)
-                response.raise_for_status()
-                transcription_response = response.json()
+                # Use the official Mistral SDK client
+                response = client.audio.transcriptions.create(
+                    model=model,
+                    file={
+                        "content": audio_file,
+                        "file_name": os.path.basename(audio_path),
+                    },
+                    timestamp_granularities=[granularity] if granularity else None,
+                    diarize=diarize,
+                )
+
+                # Convert the SDK response model to a dictionary for backward compatibility
+                transcription_response = response.model_dump()
+
                 print(
                     f"\n####\n\n- Granularity: {granularity}\n- Diarize: {diarize}\n- Response:\n",
                     transcription_response,
@@ -163,9 +166,12 @@ def transcribe_audio(audio_path, granularity="word", diarize=False):
                 )
             return transcription_response
         except Exception as e:
+            last_error = e
+            print(f"Attempt {i + 1} failed: {e}")
             time.sleep(delay_time)
-            print(e)
-    raise Exception(f"Failed to transcribe audio: {str(e)}")
+    raise Exception(
+        f"Failed to transcribe audio after {max_retries} attempts: {str(last_error)}"
+    )
 
 
 def split_segments_by_segment_boundaries(word_segments, segment_segments):
