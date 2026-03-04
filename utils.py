@@ -1291,9 +1291,13 @@ def generate_subtitles_for_slideshow(transcription_response, durations, images):
         current_line_start = None
 
         for word in words:
-            word_start = float(word.start if hasattr(word, 'start') else word['start'])
-            word_end = float(word.end if hasattr(word, 'end') else word['end'])
-            word_text = word.word if hasattr(word, 'word') else word['word']
+            word_start = float(word.get('start') if isinstance(word, dict) else getattr(word, 'start', 0))
+            word_end = float(word.get('end') if isinstance(word, dict) else getattr(word, 'end', 0))
+            word_text = word.get('text') if isinstance(word, dict) else getattr(word, 'text', '')
+            
+            # If word_text is empty, try 'word' key for backward compatibility
+            if not word_text:
+                word_text = word.get('word') if isinstance(word, dict) else getattr(word, 'word', '')
 
             # Find which image this word should appear on
             while (current_image_idx < len(cumulative_times) - 1 and
@@ -1330,7 +1334,7 @@ def generate_subtitles_for_slideshow(transcription_response, durations, images):
                     'start': current_line_start,
                     'end': adjusted_end,
                     'text': line_text.strip(),
-                    'speaker': getattr(word, 'speaker', 'Speaker 1') if hasattr(word, 'speaker') else 'Speaker 1'
+                    'speaker': word.get('speaker_id', 'Speaker 1') if isinstance(word, dict) else getattr(word, 'speaker_id', 'Speaker 1')
                 })
 
                 current_line = []
