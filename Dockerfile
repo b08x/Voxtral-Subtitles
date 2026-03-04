@@ -23,7 +23,7 @@ FROM python:3.11-slim AS runner
 
 WORKDIR /app
 
-# Install runtime system dependencies (FFmpeg, OpenCV support)
+# Install runtime system dependencies (FFmpeg, OpenCV support, libmagic for file detection)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libgl1 \
@@ -31,6 +31,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsm6 \
     libxext6 \
     libxrender1 \
+    libmagic1 \
+    libmagic-dev \
+    file \
     ca-certificates \
     curl \
     && rm -rf /var/lib/apt/lists/*

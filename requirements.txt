@@ -7,3 +7,8 @@ mistralai>=1.12.0
 pysubs2
 levenshtein
 opencv-python
+
+# Image processing and slideshow support
+Pillow>=10.0.0
+plotly>=5.0.0
+python-magic>=0.4.27

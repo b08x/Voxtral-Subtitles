@@ -2,6 +2,7 @@ import gradio as gr
 from tabs.vo_subtitles import vo_subtitles_tab
 from tabs.multilingual import multilingual_tab
 from tabs.transcription import transcription_tab
+from tabs.image_slideshow import image_slideshow_tab
 
 def how_it_works_tab():
     with gr.TabItem("How It Works", elem_classes="gradio-tabitem"):
@@ -60,6 +61,30 @@ def how_it_works_tab():
                    - Without diarization: Raw text is displayed as-is.
                 4. **Output:** A formatted HTML transcription.
 
+                ### **4. Image Slideshow**
+                **Purpose:** Create MP4 videos from audio files and image sequences with synchronized subtitles.
+
+                **How it works:**
+                1. **Upload Files:** Select an audio file (MP3, WAV, M4A, FLAC, OGG) and multiple images (JPG, PNG, BMP, TIFF, WEBP).
+                2. **Duration Configuration:**
+                   - **Auto-distribute:** Automatically distributes audio duration across images (first/last get slightly longer)
+                   - **Manual per image:** Set custom duration for each image using interactive controls
+                   - **CSV import:** Upload a CSV file with image names and durations
+                3. **Image Processing:**
+                   - Images are validated for format and size
+                   - Normalized to target resolution (1920x1080, 1280x720, or 854x480)
+                   - Aspect ratio handling: letterbox (add black bars), crop (fit exactly), or stretch (distort)
+                4. **Video Creation:**
+                   - Individual video segments created for each image with precise duration
+                   - Segments concatenated using FFmpeg
+                   - Audio synchronized with the image sequence
+                5. **Subtitle Generation:**
+                   - Audio transcribed using Mistral AI with word-level precision
+                   - Word timings mapped to image display periods
+                   - Subtitles adjusted to match slideshow timing
+                6. **Timeline Visualization:** Interactive chart showing image duration distribution
+                7. **Output:** MP4 video with images, audio, and synchronized .ass subtitles
+
 
                 </div>
                 """,
@@ -69,13 +94,14 @@ def how_it_works_tab():
 with open("styles.css", "r") as f:
     css = f.read()
 
-with gr.Blocks(title="Voxtral Transcribe - Subtitles Space", css=css) as demo:
+with gr.Blocks(title="Voxtral Transcribe - Subtitles Space") as demo:
     gr.Markdown("# Voxtral Transcribe - Subtitles Space\n\nA gradio space leveraging Voxtral Transcribe 2.0 for multiple use cases focused on subtitle creation and transcription.", elem_classes="gradio-markdown")
 
     with gr.Tabs(elem_classes="gradio-tab"):
         vo_subtitles_tab()
         multilingual_tab()
         transcription_tab()
+        image_slideshow_tab()
         how_it_works_tab()
 
-demo.launch(debug=True)
+demo.launch(debug=True, css=css)

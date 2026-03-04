@@ -742,3 +742,493 @@ def translate(segments, target_language):
                     f"Failed to translate after {max_retries} attempts. Error: {str(e)}"
                 )
             time.sleep(retry_delay)
+
+
+# ============================================================================
+# IMAGE SLIDESHOW FUNCTIONS
+# ============================================================================
+
+def validate_image_files(image_files):
+    """Validate image formats, sizes, and convert to standard format"""
+    try:
+        from PIL import Image
+
+        validated_images = []
+        supported_formats = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp'}
+
+        for image_file in image_files:
+            if not image_file or not hasattr(image_file, 'name'):
+                continue
+
+            file_path = image_file.name
+
+            # Check file extension
+            _, ext = os.path.splitext(file_path.lower())
+            if ext not in supported_formats:
+                raise ValueError(f"Unsupported image format: {ext}. Supported: {', '.join(supported_formats)}")
+
+            # Verify it's actually an image using python-magic (with fallback)
+            try:
+                import magic
+                file_type = magic.from_file(file_path, mime=True)
+                if not file_type.startswith('image/'):
+                    raise ValueError(f"File {os.path.basename(file_path)} is not a valid image")
+            except Exception as magic_error:
+                # Fallback to PIL-only verification if magic isn't available
+                print(f"Warning: python-magic not available ({magic_error}), using PIL-only validation")
+                pass
+
+            # Validate with PIL
+            try:
+                with Image.open(file_path) as img:
+                    img.verify()
+                    # Reopen for size check (verify closes the image)
+                    with Image.open(file_path) as img:
+                        width, height = img.size
+                        if width < 100 or height < 100:
+                            raise ValueError(f"Image {os.path.basename(file_path)} too small: {width}x{height}")
+                        if width > 8000 or height > 8000:
+                            raise ValueError(f"Image {os.path.basename(file_path)} too large: {width}x{height}")
+
+                        validated_images.append({
+                            'path': file_path,
+                            'name': os.path.basename(file_path),
+                            'size': (width, height),
+                            'format': img.format
+                        })
+            except Exception as e:
+                raise ValueError(f"Invalid image {os.path.basename(file_path)}: {str(e)}")
+
+        if not validated_images:
+            raise ValueError("No valid images found")
+
+        return validated_images
+
+    except ImportError as e:
+        raise ValueError(f"Required image processing libraries not available: {e}")
+
+
+def normalize_image_resolution(images, target_resolution="1920x1080", aspect_handling="letterbox"):
+    """Standardize image resolution while maintaining aspect ratio"""
+    from PIL import Image, ImageOps
+
+    target_width, target_height = map(int, target_resolution.split('x'))
+    normalized_images = []
+
+    temp_dir = "temp_normalized_images"
+    os.makedirs(temp_dir, exist_ok=True)
+
+    for i, image_info in enumerate(images):
+        try:
+            with Image.open(image_info['path']) as img:
+                # Convert to RGB if necessary (handles RGBA, etc.)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+
+                if aspect_handling == "letterbox":
+                    # Maintain aspect ratio, add black bars
+                    img.thumbnail((target_width, target_height), Image.Resampling.LANCZOS)
+                    # Create black background
+                    result = Image.new('RGB', (target_width, target_height), (0, 0, 0))
+                    # Center the image
+                    x = (target_width - img.size[0]) // 2
+                    y = (target_height - img.size[1]) // 2
+                    result.paste(img, (x, y))
+
+                elif aspect_handling == "crop":
+                    # Crop to fit exact aspect ratio
+                    result = ImageOps.fit(img, (target_width, target_height), Image.Resampling.LANCZOS)
+
+                else:  # stretch
+                    # Stretch to exact dimensions
+                    result = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+
+                # Save normalized image
+                output_path = os.path.join(temp_dir, f"normalized_{i:04d}.jpg")
+                result.save(output_path, "JPEG", quality=95)
+
+                normalized_images.append({
+                    'path': output_path,
+                    'original_name': image_info['name'],
+                    'size': (target_width, target_height)
+                })
+
+        except Exception as e:
+            raise ValueError(f"Failed to normalize image {image_info['name']}: {str(e)}")
+
+    return normalized_images
+
+
+def get_audio_duration(audio_path):
+    """Get duration of audio file in seconds"""
+    try:
+        result = subprocess.run([
+            'ffprobe', '-v', 'quiet', '-print_format', 'json',
+            '-show_format', audio_path
+        ], capture_output=True, text=True, check=True)
+
+        metadata = json.loads(result.stdout)
+        duration = float(metadata['format']['duration'])
+        return duration
+    except Exception as e:
+        raise ValueError(f"Failed to get audio duration: {str(e)}")
+
+
+def calculate_auto_durations(images, audio_duration):
+    """Auto-distribute audio duration across images intelligently"""
+    num_images = len(images)
+    if num_images == 0:
+        return []
+
+    # Base duration per image
+    base_duration = audio_duration / num_images
+
+    # Ensure minimum and maximum durations
+    min_duration = 0.5  # 0.5 seconds minimum
+    max_duration = min(audio_duration * 0.8, 30.0)  # 80% of total or 30 seconds max
+
+    # Smart distribution: slightly longer for first and last images
+    durations = []
+    for i in range(num_images):
+        if i == 0 or i == num_images - 1:
+            # First and last images get slightly longer duration
+            duration = min(base_duration * 1.2, max_duration)
+        else:
+            duration = base_duration
+
+        duration = max(min_duration, min(duration, max_duration))
+        durations.append(duration)
+
+    # Normalize to exact audio duration
+    total_duration = sum(durations)
+    scale_factor = audio_duration / total_duration
+    durations = [d * scale_factor for d in durations]
+
+    # Ensure last image ends exactly with audio
+    durations[-1] = audio_duration - sum(durations[:-1])
+
+    return durations
+
+
+def validate_manual_durations(durations, audio_duration, tolerance=0.1):
+    """Validate manual durations against audio length"""
+    if not durations:
+        raise ValueError("No durations provided")
+
+    total_duration = sum(durations)
+    difference = abs(total_duration - audio_duration)
+
+    if difference > tolerance:
+        raise ValueError(
+            f"Duration mismatch: images total {total_duration:.2f}s, "
+            f"audio is {audio_duration:.2f}s (difference: {difference:.2f}s)"
+        )
+
+    # Check for reasonable individual durations
+    for i, duration in enumerate(durations):
+        if duration < 0.1:
+            raise ValueError(f"Image {i+1} duration too short: {duration:.2f}s")
+        if duration > 60.0:
+            raise ValueError(f"Image {i+1} duration too long: {duration:.2f}s")
+
+    return durations
+
+
+def parse_csv_durations(csv_file, images):
+    """Parse CSV file with image/duration mappings"""
+    import csv
+
+    if not csv_file:
+        raise ValueError("No CSV file provided")
+
+    durations = []
+    expected_count = len(images)
+
+    try:
+        with open(csv_file.name, 'r', newline='') as file:
+            reader = csv.DictReader(file)
+
+            # Expected headers: image_name, duration OR image_index, duration
+            required_headers = ['duration']
+            if not any(header in reader.fieldnames for header in ['image_name', 'image_index']):
+                raise ValueError("CSV must contain 'image_name' or 'image_index' column")
+            if 'duration' not in reader.fieldnames:
+                raise ValueError("CSV must contain 'duration' column")
+
+            duration_map = {}
+            for row in reader:
+                try:
+                    duration = float(row['duration'])
+                    if 'image_index' in row:
+                        idx = int(row['image_index'])
+                        duration_map[idx] = duration
+                    elif 'image_name' in row:
+                        # Find matching image by name
+                        image_name = row['image_name']
+                        for i, img in enumerate(images):
+                            if img['name'] == image_name:
+                                duration_map[i] = duration
+                                break
+                except (ValueError, KeyError) as e:
+                    raise ValueError(f"Invalid CSV row: {row}. Error: {e}")
+
+            # Build ordered duration list
+            for i in range(expected_count):
+                if i not in duration_map:
+                    raise ValueError(f"No duration specified for image {i+1}")
+                durations.append(duration_map[i])
+
+        return durations
+
+    except FileNotFoundError:
+        raise ValueError("CSV file not found")
+    except Exception as e:
+        raise ValueError(f"Failed to parse CSV: {str(e)}")
+
+
+def create_image_sequence_video(images, durations, audio_path, resolution="1920x1080"):
+    """Generate MP4 using FFmpeg with image sequence and audio"""
+    temp_dir = "temp_video_creation"
+    os.makedirs(temp_dir, exist_ok=True)
+
+    try:
+        # Create individual video segments for each image
+        segment_files = []
+
+        for i, (image_info, duration) in enumerate(zip(images, durations)):
+            segment_file = os.path.join(temp_dir, f"segment_{i:04d}.mp4")
+
+            # Create video segment from image with specific duration - use basic settings
+            width, height = resolution.split('x')
+            cmd = [
+                'ffmpeg', '-y',
+                '-loop', '1',
+                '-i', image_info['path'],
+                '-c:v', 'mpeg4',  # Use mpeg4 instead of libx264 for compatibility
+                '-t', str(duration),
+                '-pix_fmt', 'yuv420p',
+                '-r', '24',  # 24 fps
+                '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                '-q:v', '5',  # Good quality for mpeg4
+                segment_file
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise ValueError(f"Failed to create segment {i}: {result.stderr}")
+
+            segment_files.append(segment_file)
+
+        # Create concat file for FFmpeg
+        concat_file = os.path.join(temp_dir, "concat_list.txt")
+        with open(concat_file, 'w') as f:
+            for segment_file in segment_files:
+                f.write(f"file '{os.path.abspath(segment_file)}'\n")
+
+        # Concatenate all segments
+        video_only_file = os.path.join(temp_dir, "video_only.mp4")
+        cmd = [
+            'ffmpeg', '-y',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', concat_file,
+            '-c', 'copy',
+            video_only_file
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise ValueError(f"Failed to concatenate segments: {result.stderr}")
+
+        # Add audio to video - use compatible audio codec
+        final_video_file = os.path.join(temp_dir, "final_video_with_audio.mp4")
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', video_only_file,
+            '-i', audio_path,
+            '-c:v', 'copy',
+            '-c:a', 'mp3',  # Use mp3 instead of aac for compatibility
+            '-shortest',
+            final_video_file
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise ValueError(f"Failed to add audio: {result.stderr}")
+
+        return final_video_file
+
+    except Exception as e:
+        raise ValueError(f"Video creation failed: {str(e)}")
+
+
+def create_timing_visualization(images, durations):
+    """Generate timeline visualization for preview"""
+    try:
+        import plotly.graph_objects as go
+        import plotly.express as px
+
+        # Calculate cumulative times
+        cumulative_times = [0]
+        for duration in durations:
+            cumulative_times.append(cumulative_times[-1] + duration)
+
+        # Create timeline data
+        timeline_data = []
+        colors = px.colors.qualitative.Set3
+
+        for i, (image_info, duration) in enumerate(zip(images, durations)):
+            timeline_data.append({
+                'Image': f"Image {i+1}",
+                'Start': cumulative_times[i],
+                'End': cumulative_times[i+1],
+                'Duration': duration,
+                'Name': image_info.get('original_name', image_info.get('name', f'Image {i+1}'))
+            })
+
+        # Create Gantt-style chart
+        fig = go.Figure()
+
+        for i, data in enumerate(timeline_data):
+            fig.add_trace(go.Scatter(
+                x=[data['Start'], data['End'], data['End'], data['Start'], data['Start']],
+                y=[i, i, i+0.8, i+0.8, i],
+                fill='toself',
+                fillcolor=colors[i % len(colors)],
+                line=dict(color=colors[i % len(colors)]),
+                name=data['Name'],
+                text=f"{data['Name']}<br>Duration: {data['Duration']:.2f}s",
+                hovertemplate='%{text}<extra></extra>',
+                showlegend=False
+            ))
+
+            # Add text labels
+            fig.add_trace(go.Scatter(
+                x=[(data['Start'] + data['End']) / 2],
+                y=[i + 0.4],
+                text=[f"{data['Duration']:.1f}s"],
+                mode='text',
+                textfont=dict(color='black', size=10),
+                showlegend=False,
+                hoverinfo='skip'
+            ))
+
+        # Update layout
+        fig.update_layout(
+            title="Image Display Timeline",
+            xaxis_title="Time (seconds)",
+            yaxis_title="Images",
+            height=max(300, len(images) * 60),
+            yaxis=dict(
+                tickmode='array',
+                tickvals=list(range(len(images))),
+                ticktext=[f"Image {i+1}" for i in range(len(images))],
+                range=[-0.5, len(images) - 0.5]
+            ),
+            xaxis=dict(range=[0, cumulative_times[-1] * 1.05]),
+            plot_bgcolor='white',
+            showlegend=False
+        )
+
+        return fig
+
+    except ImportError:
+        return None  # Plotly not available
+    except Exception as e:
+        print(f"Failed to create visualization: {e}")
+        return None
+
+
+def generate_subtitles_for_slideshow(transcription_response, durations, images):
+    """Generate subtitles with timing adjustment for slideshow"""
+    try:
+        # Get word-level transcription for precise timing
+        words = []
+
+        if hasattr(transcription_response, 'segments'):
+            segments = transcription_response.segments
+        else:
+            segments = transcription_response.get('segments', [])
+
+        # Extract words from segments
+        for segment in segments:
+            if hasattr(segment, 'words') and segment.words:
+                words.extend(segment.words)
+            elif 'words' in segment and segment['words']:
+                words.extend(segment['words'])
+
+        if not words:
+            raise ValueError("No word-level transcription available")
+
+        # Map words to image timing
+        total_audio_duration = sum(durations)
+        cumulative_times = [0]
+        for duration in durations:
+            cumulative_times.append(cumulative_times[-1] + duration)
+
+        # Adjust word timings to match slideshow timing
+        subtitle_entries = []
+        current_image_idx = 0
+        current_line = []
+        current_line_start = None
+
+        for word in words:
+            word_start = float(word.start if hasattr(word, 'start') else word['start'])
+            word_end = float(word.end if hasattr(word, 'end') else word['end'])
+            word_text = word.word if hasattr(word, 'word') else word['word']
+
+            # Find which image this word should appear on
+            while (current_image_idx < len(cumulative_times) - 1 and
+                   word_start >= cumulative_times[current_image_idx + 1]):
+                current_image_idx += 1
+
+            # Adjust timing to image boundaries
+            image_start = cumulative_times[current_image_idx]
+            image_end = cumulative_times[current_image_idx + 1]
+
+            # Scale word timing within image duration
+            if current_image_idx < len(durations):
+                original_image_duration = image_end - image_start
+                word_progress = (word_start - image_start) / original_image_duration if original_image_duration > 0 else 0
+                adjusted_start = image_start + (word_progress * durations[current_image_idx])
+                adjusted_end = min(adjusted_start + (word_end - word_start), image_end)
+            else:
+                adjusted_start = word_start
+                adjusted_end = word_end
+
+            # Build subtitle lines
+            if current_line_start is None:
+                current_line_start = adjusted_start
+
+            current_line.append(word_text)
+
+            # Create subtitle line when reaching punctuation or line length limit
+            line_text = ' '.join(current_line)
+            if (len(line_text) > 80 or
+                word_text.rstrip().endswith(('.', '!', '?', ',')) or
+                adjusted_end - current_line_start > 4.0):  # Max 4 seconds per line
+
+                subtitle_entries.append({
+                    'start': current_line_start,
+                    'end': adjusted_end,
+                    'text': line_text.strip(),
+                    'speaker': getattr(word, 'speaker', 'Speaker 1') if hasattr(word, 'speaker') else 'Speaker 1'
+                })
+
+                current_line = []
+                current_line_start = None
+
+        # Add remaining words if any
+        if current_line:
+            line_text = ' '.join(current_line)
+            subtitle_entries.append({
+                'start': current_line_start or 0,
+                'end': total_audio_duration,
+                'text': line_text.strip(),
+                'speaker': 'Speaker 1'
+            })
+
+        return subtitle_entries
+
+    except Exception as e:
+        raise ValueError(f"Failed to generate subtitles for slideshow: {str(e)}")
