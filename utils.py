@@ -451,6 +451,19 @@ def hex_to_bgr(hex_color):
     return f"&H{bgr}&"
 
 
+def hex_to_pysubs2_color(hex_color):
+    """Convert hex color (#RRGGBB) to pysubs2.Color (R, G, B)."""
+    if not hex_color:
+        return Color(255, 255, 255, 0)
+    hex_color = hex_color.lstrip("#")
+    if len(hex_color) == 6:
+        r = int(hex_color[0:2], 16)
+        g = int(hex_color[2:4], 16)
+        b = int(hex_color[4:6], 16)
+        return Color(r, g, b, 0)
+    return Color(255, 255, 255, 0)
+
+
 def generate_subtitles(transcription_response, segment_transcription):
     # Try to get words first, then fall back to segments
     word_segments = transcription_response.get("words")
@@ -490,15 +503,49 @@ def create_ass_file(
     incoming_color="#808080",
     font_name="Liberation Sans",
     alignment="Bottom Center",
+    # Advanced styling from slideshow tab
+    primary_colour=None,
+    secondary_colour=None,
+    outline_colour=None,
+    back_colour=None,
+    bold=False,
+    italic=False,
+    border_style=1,
+    margin_l=10,
+    margin_r=10,
+    margin_v=10,
+    encoding=1,
+    **kwargs
 ):
     sub = SSAFile()
     style = sub.styles["Default"]
     style.fontname = font_name
     style.fontsize = font_size
-    style.primarycolor = int(text_color.lstrip("#"), 16)
-    style.outlinecolor = 0x000000
-    style.bold = False
-    style.italic = False
+    
+    # Use advanced colors if provided, otherwise fallback to text_color
+    if primary_colour:
+        style.primarycolor = hex_to_pysubs2_color(primary_colour)
+    else:
+        style.primarycolor = hex_to_pysubs2_color(text_color)
+        
+    if secondary_colour:
+        style.secondarycolor = hex_to_pysubs2_color(secondary_colour)
+    
+    if outline_colour:
+        style.outlinecolor = hex_to_pysubs2_color(outline_colour)
+    else:
+        style.outlinecolor = Color(0, 0, 0, 0) # Default black outline
+        
+    if back_colour:
+        style.backcolor = hex_to_pysubs2_color(back_colour)
+    
+    style.bold = bold
+    style.italic = italic
+    style.borderstyle = border_style
+    style.marginl = margin_l
+    style.marginr = margin_r
+    style.marginv = margin_v
+    style.encoding = encoding
 
     alignment_map = {
         "Bottom Left": 1,
@@ -511,9 +558,13 @@ def create_ass_file(
         "Top Center": 8,
         "Top Right": 9,
     }
-    style.alignment = alignment_map.get(alignment, 2)
+    
+    if isinstance(alignment, str):
+        style.alignment = alignment_map.get(alignment, 2)
+    else:
+        style.alignment = alignment
 
-    bgr_default = hex_to_bgr(text_color)
+    bgr_default = hex_to_bgr(text_color if not primary_colour else primary_colour)
     bgr_incoming = hex_to_bgr(incoming_color)
 
     has_word_granularity = len(subtitles) > 0 and len(subtitles[0]) == 5
@@ -605,6 +656,7 @@ def overlay_subtitles(
     logo_path="videologo.png",
     logo_scale=0.5,
     padding=10,
+    **kwargs
 ):
     """
     Overlays subtitles on the video, with an option to add a logo in the bottom right corner.
@@ -626,6 +678,7 @@ def overlay_subtitles(
             incoming_color,
             font_name,
             alignment,
+            **kwargs
         )
 
         output_path = os.path.join(TEMP_DIR, "output_video.mp4")
