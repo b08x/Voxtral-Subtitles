@@ -1340,7 +1340,8 @@ def generate_subtitles_for_slideshow(transcription_response, durations, images):
         # Adjust word timings to match slideshow timing
         subtitle_entries = []
         current_image_idx = 0
-        current_line = []
+        current_line_text = []
+        current_line_words = []
         current_line_start = None
 
         for word in words:
@@ -1375,33 +1376,46 @@ def generate_subtitles_for_slideshow(transcription_response, durations, images):
             if current_line_start is None:
                 current_line_start = adjusted_start
 
-            current_line.append(word_text)
+            current_line_text.append(word_text)
+            
+            speaker_id = word.get('speaker_id', 'Speaker 1') if isinstance(word, dict) else getattr(word, 'speaker_id', 'Speaker 1')
+            
+            current_line_words.append({
+                'text': word_text,
+                'start': adjusted_start,
+                'end': adjusted_end,
+                'speaker_id': speaker_id
+            })
 
             # Create subtitle line when reaching punctuation or line length limit
-            line_text = ' '.join(current_line)
+            line_text = ' '.join(current_line_text)
             if (len(line_text) > 80 or
                 word_text.rstrip().endswith(('.', '!', '?', ',')) or
                 adjusted_end - current_line_start > 4.0):  # Max 4 seconds per line
 
-                subtitle_entries.append({
-                    'start': current_line_start,
-                    'end': adjusted_end,
-                    'text': line_text.strip(),
-                    'speaker': word.get('speaker_id', 'Speaker 1') if isinstance(word, dict) else getattr(word, 'speaker_id', 'Speaker 1')
-                })
+                subtitle_entries.append((
+                    current_line_start,
+                    adjusted_end,
+                    line_text.strip(),
+                    current_line_words,
+                    speaker_id
+                ))
 
-                current_line = []
+                current_line_text = []
+                current_line_words = []
                 current_line_start = None
 
         # Add remaining words if any
-        if current_line:
-            line_text = ' '.join(current_line)
-            subtitle_entries.append({
-                'start': current_line_start or 0,
-                'end': total_audio_duration,
-                'text': line_text.strip(),
-                'speaker': 'Speaker 1'
-            })
+        if current_line_text:
+            line_text = ' '.join(current_line_text)
+            last_speaker = current_line_words[-1]['speaker_id'] if current_line_words else 'Speaker 1'
+            subtitle_entries.append((
+                current_line_start or 0,
+                total_audio_duration,
+                line_text.strip(),
+                current_line_words,
+                last_speaker
+            ))
 
         return subtitle_entries
 
