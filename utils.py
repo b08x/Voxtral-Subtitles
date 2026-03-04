@@ -3,7 +3,7 @@ import subprocess
 import re
 import json
 import time
-from pysubs2 import SSAFile, SSAEvent
+from pysubs2 import SSAFile, SSAEvent, Color
 import Levenshtein
 from pydantic import BaseModel
 from mistralai import Mistral
