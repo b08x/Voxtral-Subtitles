@@ -10,8 +10,12 @@ from mistralai import Mistral
 from mistralai.models import File
 import assemblyai as aai
 from deepgram import DeepgramClient
+from dotenv import load_dotenv
 
 import httpx
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Load API keys from environment variables
 mistral_api_key = os.getenv("MISTRAL_API_KEY")
@@ -323,23 +327,73 @@ def transcribe_audio_assemblyai(audio_path, diarize=False, language_code=None):
     )
 
 
+def validate_transcription_response(response, source_service):
+    """Ensure response has required structure regardless of service"""
+    if response is None:
+        raise ValueError(f"Transcription response is None from {source_service}")
+
+    if not isinstance(response, dict):
+        raise TypeError(f"Expected dict, got {type(response)} from {source_service}")
+
+    required_keys = {'text', 'words', 'segments'}
+    missing_keys = required_keys - set(response.keys())
+    if missing_keys:
+        raise ValueError(f"Missing keys {missing_keys} from {source_service}")
+
+    # Validate structure of words and segments
+    for word in response.get('words', []):
+        if not isinstance(word, dict) or 'text' not in word:
+            raise ValueError(f"Invalid word structure from {source_service}")
+
+    for segment in response.get('segments', []):
+        if not isinstance(segment, dict) or 'text' not in segment:
+            raise ValueError(f"Invalid segment structure from {source_service}")
+
+    return response
+
+
 def transcribe_audio_unified(audio_path, diarize=False, language_code=None):
-    """Unified transcription function that uses AssemblyAI by default, with Deepgram as fallback."""
+    """Unified transcription function with validation and proper error handling."""
+    errors = []
+
+    # Try AssemblyAI first
     if assemblyai_api_key:
         try:
             result = transcribe_audio_assemblyai(audio_path, diarize=diarize, language_code=language_code)
+            validated_result = validate_transcription_response(result, "AssemblyAI")
+
             if diarize and result.get("segments"):
                 has_speakers = any(seg.get("speaker") != "speaker_null" for seg in result["segments"])
                 if has_speakers:
                     print("Using AssemblyAI for transcription (speaker diarization enabled)")
-                    return result
-            return result
+                    return validated_result
+            print("Using AssemblyAI for transcription")
+            return validated_result
         except Exception as e:
-            print(f"AssemblyAI transcription failed: {e}")
+            error_msg = f"AssemblyAI failed: {str(e)}"
+            errors.append(error_msg)
+            print(error_msg)
             print("Falling back to Deepgram...")
-    
+    else:
+        errors.append("AssemblyAI API key not configured")
+
     # Fallback to Deepgram
-    return transcribe_audio_deepgram(audio_path, diarize=diarize, language_code=language_code)
+    if deepgram_api_key:
+        try:
+            result = transcribe_audio_deepgram(audio_path, diarize=diarize, language_code=language_code)
+            validated_result = validate_transcription_response(result, "Deepgram")
+            print("Using Deepgram for transcription")
+            return validated_result
+        except Exception as e:
+            error_msg = f"Deepgram failed: {str(e)}"
+            errors.append(error_msg)
+            print(error_msg)
+    else:
+        errors.append("Deepgram API key not configured")
+
+    # Both services failed
+    all_errors = "; ".join(errors)
+    raise ValueError(f"All transcription services failed: {all_errors}")
 
 
 def split_segments_by_segment_boundaries(word_segments, segment_segments):
@@ -740,6 +794,16 @@ def overlay_subtitles(
 
 
 def generate_raw_subtitles_html(subtitles, speaker_colors, show_timestamps=True):
+    """Generate HTML with defensive parameter checking"""
+    if not isinstance(subtitles, list):
+        raise TypeError(f"Expected list of subtitles, got {type(subtitles)}")
+
+    if speaker_colors is None:
+        raise ValueError("speaker_colors parameter is required")
+
+    if not isinstance(speaker_colors, dict):
+        raise TypeError(f"Expected dict for speaker_colors, got {type(speaker_colors)}")
+
     html = "<div style='white-space: pre-wrap; font-size: 16px; line-height: 1.2; color: #E0E0E0; background: #121212; padding: 10px; border-radius: 8px;'>"
 
     has_word_granularity = len(subtitles) > 0 and len(subtitles[0]) == 5
@@ -1293,6 +1357,10 @@ def create_timing_visualization(images, durations):
 def generate_subtitles_for_slideshow(transcription_response, durations, images):
     """Generate subtitles with timing adjustment for slideshow"""
     try:
+        # Validate transcription response
+        if transcription_response is None:
+            raise ValueError("Transcription response is None - transcription failed")
+
         # Get word-level transcription for precise timing
         words = []
 

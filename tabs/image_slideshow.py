@@ -85,7 +85,13 @@ def process_audio_and_images(
 
         # Step 5: Transcribe audio for subtitles
         progress(0.6, desc="Transcribing audio...")
-        transcription_response = transcribe_audio_unified(audio_file.name, diarize=diarize)
+        try:
+            transcription_response = transcribe_audio_unified(audio_file.name, diarize=diarize)
+        except ValueError as e:
+            if "API key" in str(e):
+                raise ValueError(f"Transcription API key missing or invalid: {str(e)}")
+            else:
+                raise ValueError(f"Transcription failed: {str(e)}")
 
         # Step 6: Generate subtitles with timing adjustment
         progress(0.7, desc="Generating subtitles...")
@@ -120,8 +126,28 @@ def process_audio_and_images(
         progress(0.95, desc="Creating timeline visualization...")
         timeline_plot = create_timing_visualization(normalized_images, durations)
 
-        # Step 10: Generate subtitle preview HTML
-        subtitle_html = generate_raw_subtitles_html(subtitles)
+        # Step 10: Build speaker colors for subtitle preview
+        unique_speakers = []
+        for _, _, _, word_segments, _ in subtitles:
+            if word_segments:
+                for w in word_segments:
+                    speaker_id = w.get("speaker_id")
+                    if speaker_id and speaker_id not in unique_speakers:
+                        unique_speakers.append(speaker_id)
+
+        # Create speaker color mapping using user-selected primary color
+        default_colors = ["#FFFFFF", "#FFD700", "#87CEEB", "#FF6B6B", "#4ECDC4", "#45B7D1"]
+        speaker_colors = {}
+
+        first_speaker = unique_speakers[0] if unique_speakers else "speaker_null"
+        speaker_colors[first_speaker] = primary_colour  # Use user-selected color
+
+        for i, speaker in enumerate(unique_speakers[1:], 1):
+            speaker_colors[speaker] = default_colors[i % len(default_colors)]
+        speaker_colors["speaker_null"] = primary_colour
+
+        # Step 11: Generate subtitle preview HTML
+        subtitle_html = generate_raw_subtitles_html(subtitles, speaker_colors)
 
         progress(1.0, desc="Processing complete!")
 
