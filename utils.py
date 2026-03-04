@@ -14,8 +14,13 @@ from dotenv import load_dotenv
 
 import httpx
 
-# Import validation components
+# Import validation components and type definitions
+from typing import List, Dict, Tuple, Optional, Union, Any
 from validation.transcription_validator import validate_transcription_response, validate_subtitle_parameters
+from models.subtitles import (
+    SubtitleTuple, SpeakerColors, TranscriptionResponse,
+    SubtitleSettings, ValidationResult, ProcessingResult
+)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -330,7 +335,11 @@ def transcribe_audio_assemblyai(audio_path, diarize=False, language_code=None):
     )
 
 
-def transcribe_audio_unified(audio_path, diarize=False, language_code=None):
+def transcribe_audio_unified(
+    audio_path: str,
+    diarize: bool = False,
+    language_code: Optional[str] = None
+) -> TranscriptionResponse:
     """Unified transcription function with validation and proper error handling."""
     errors = []
 
@@ -771,7 +780,11 @@ def overlay_subtitles(
         raise Exception(f"Failed to overlay subtitles: {str(e)}")
 
 
-def generate_raw_subtitles_html(subtitles, speaker_colors, show_timestamps=True):
+def generate_raw_subtitles_html(
+    subtitles: List[SubtitleTuple],
+    speaker_colors: SpeakerColors,
+    show_timestamps: bool = True
+) -> str:
     """Generate HTML with defensive parameter checking"""
     validate_subtitle_parameters(subtitles, speaker_colors)
 

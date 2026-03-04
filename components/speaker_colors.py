@@ -6,7 +6,15 @@ and ensure consistent behavior across the vo_subtitles, multilingual,
 image_slideshow, and transcription tabs.
 """
 
-def build_speaker_colors(subtitles, primary_color, text_color, diarize=True):
+from typing import List, Dict, Union, Any
+from models.subtitles import SpeakerColors, SubtitleTuple
+
+def build_speaker_colors(
+    subtitles: Union[List[SubtitleTuple], List[Dict[str, Any]]],
+    primary_color: str,
+    text_color: str,
+    diarize: bool = True
+) -> SpeakerColors:
     """
     Extract speaker color generation logic used by all tabs.
 
@@ -58,7 +66,9 @@ def build_speaker_colors(subtitles, primary_color, text_color, diarize=True):
     return speaker_colors
 
 
-def extract_unique_speakers(subtitles):
+def extract_unique_speakers(
+    subtitles: Union[List[SubtitleTuple], List[Dict[str, Any]]]
+) -> List[str]:
     """
     Extract unique speaker IDs from subtitle data, handling different formats.
 
@@ -108,7 +118,11 @@ def extract_unique_speakers(subtitles):
     return unique_speakers
 
 
-def get_speaker_color(speaker_colors, speaker_id, fallback_color="#FFFFFF"):
+def get_speaker_color(
+    speaker_colors: SpeakerColors,
+    speaker_id: str,
+    fallback_color: str = "#FFFFFF"
+) -> str:
     """
     Safely get speaker color with fallback.
 

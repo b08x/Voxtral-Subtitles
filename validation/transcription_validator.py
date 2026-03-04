@@ -6,7 +6,13 @@ from different services (AssemblyAI, Deepgram) to ensure consistent
 data structures and catch issues early in the pipeline.
 """
 
-def validate_transcription_response(response, source_service):
+from typing import List, Dict, Tuple, Union, Any
+from models.subtitles import TranscriptionResponse, SpeakerColors, SubtitleTuple
+
+def validate_transcription_response(
+    response: Any,
+    source_service: str
+) -> TranscriptionResponse:
     """
     Ensure response has required structure regardless of service.
 
@@ -66,7 +72,10 @@ def validate_transcription_response(response, source_service):
     return response
 
 
-def validate_subtitle_parameters(subtitles, speaker_colors):
+def validate_subtitle_parameters(
+    subtitles: List[SubtitleTuple],
+    speaker_colors: SpeakerColors
+) -> None:
     """
     Validate parameters for subtitle generation functions.
 
@@ -98,7 +107,7 @@ def validate_subtitle_parameters(subtitles, speaker_colors):
             raise ValueError(f"Unsupported subtitle format: {len(first_subtitle)} elements. Expected 4 or 5.")
 
 
-def validate_api_keys():
+def validate_api_keys() -> Tuple[bool, bool]:
     """
     Validate that at least one transcription API key is configured.
 
@@ -125,7 +134,7 @@ def validate_api_keys():
     return assemblyai_available, deepgram_available
 
 
-def validate_audio_file(audio_path):
+def validate_audio_file(audio_path: str) -> None:
     """
     Validate audio file exists and has supported format.
 
