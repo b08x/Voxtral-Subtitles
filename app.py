@@ -20,16 +20,16 @@ def how_it_works_tab():
                 **How it works:**
                 1. **Upload a Video:** Select a video file (MP4, MOV, or AVI).
                 2. **Audio Extraction:** The app extracts the audio using `ffmpeg`.
-                3. **API Calls:**
-                   - The app makes **two API calls** to Mistral:
-                     - First, with `diarize=True` to identify speakers and segment-level timestamps.
-                     - Second, with `granularity="word"` to get word-level timestamps.
-                   This is required as diarization and word granularity are not currently available simultaneously.
+                3. **API Call:**
+                   - The app uses a **unified transcription pipeline**:
+                     - It tries **AssemblyAI** first for high-quality diarization.
+                     - If AssemblyAI is unavailable or fails, it falls back to **Deepgram**.
+                   - This provides robust word-level timestamps and speaker identification.
                 4. **Mapping Speakers to Words:**
-                   - Each word timestamp is matched to a speaker using the segment-level diarization transcription.
-                   - Words are grouped into subtitle lines (max 80 chars), split at punctuation or time gaps, this can be freely customized.
+                   - Each word timestamp is matched to a speaker using the diarization transcription.
+                   - Words are grouped into subtitle lines (max 80 chars), split at punctuation or time gaps.
                 5. **Subtitle Styling:** Customize font, size, alignment, and colors for speakers.
-                6. **Overlay:** The app generates an `.ass` file and overlays subtitles onto the video using `ffmpeg`.
+                6. **Overlay:** The app generates an `.ass` file and overlays subtitles onto the video using `ffmpeg` (with hardware acceleration if available).
                 7. **Output:** The processed video with subtitles and a raw HTML output of subtitles with timestamps.
 
                 ### **2. Multilingual Subtitles**
@@ -38,9 +38,9 @@ def how_it_works_tab():
                 **How it works:**
                 1. **Upload a Video:** Select a video file (MP4, MOV, or AVI).
                 2. **Audio Extraction:** The app extracts the audio using `ffmpeg`.
-                3. **API Call:**
-                   - The app calls Mistral’s API with `diarize=True` (if enabled).
-                   - The transcription is translated into the selected language using Mistral Small.
+                3. **Transcription & Translation:**
+                   - The app transcribes the audio using the unified pipeline (AssemblyAI/Deepgram).
+                   - The transcription is then translated into the selected language using **Mistral Small**.
                 4. **Subtitle Splitting:**
                    - Translated text is split into lines (max 80 chars) using punctuation or time gaps.
                    - Timing is preserved by distributing the original segment’s duration.
@@ -79,7 +79,7 @@ def how_it_works_tab():
                    - Segments concatenated using FFmpeg
                    - Audio synchronized with the image sequence
                 5. **Subtitle Generation:**
-                   - Audio transcribed using Mistral AI with word-level precision
+                   - Audio transcribed using the unified pipeline (AssemblyAI/Deepgram) with word-level precision
                    - Word timings mapped to image display periods
                    - Subtitles adjusted to match slideshow timing
                 6. **Timeline Visualization:** Interactive chart showing image duration distribution

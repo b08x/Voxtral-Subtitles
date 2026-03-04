@@ -18,6 +18,11 @@ services:
     env_file: .env
     environment:
       - MISTRAL_API_KEY=${MISTRAL_API_KEY}
+      - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
+      - COMPUTE_DEVICE=${COMPUTE_DEVICE:-CPU}
+    volumes:
+      - ./temp_files:/app/temp_files:z
     restart: unless-stopped
 
   # NVIDIA-specific profile for potential GPU acceleration (OpenCV/FFmpeg)

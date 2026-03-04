@@ -85,7 +85,7 @@ def process_audio_and_images(
 
         # Step 5: Transcribe audio for subtitles
         progress(0.6, desc="Transcribing audio...")
-        transcription_response = transcribe_audio(audio_file.name, granularity="word", diarize=diarize)
+        transcription_response = transcribe_audio_unified(audio_file.name, diarize=diarize)
 
         # Step 6: Generate subtitles with timing adjustment
         progress(0.7, desc="Generating subtitles...")

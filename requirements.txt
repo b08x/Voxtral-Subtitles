@@ -5,16 +5,10 @@ ffmpeg-python>=0.2.0
 python-dotenv>=1.0.1
 mistralai>=1.12.0
 assemblyai>=0.34.0
-yt-dlp>=2024.4.9
-pydantic>=2.10.3
-ffmpeg-python>=0.2.0
-python-dotenv>=1.0.1
-mistralai>=1.12.0
+deepgram-sdk>=3.0.0
 pysubs2
 levenshtein
 opencv-python
-
-# Image processing and slideshow support
 Pillow>=10.0.0
 plotly>=5.0.0
 python-magic>=0.4.27

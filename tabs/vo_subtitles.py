@@ -58,7 +58,7 @@ def process_uploaded_video(
         if extract_error:
             raise Exception(extract_error)
 
-        # Use unified transcription (AssemblyAI by default, Mistral as fallback)
+        # Use unified transcription (AssemblyAI by default, Deepgram as fallback)
         progress(
             0.2, desc="Transcribing audio (AssemblyAI with speaker diarization)..."
         )

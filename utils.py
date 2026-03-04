@@ -9,24 +9,37 @@ from pydantic import BaseModel
 from mistralai import Mistral
 from mistralai.models import File
 import assemblyai as aai
+from deepgram import DeepgramClient, PrerecordedOptions, FileSource
 
 import httpx
 
-# Load API key from environment variable
-api_key = os.getenv("MISTRAL_API_KEY")
-if not api_key:
-    raise ValueError("No Mistral API key found.")
+# Load API keys from environment variables
+mistral_api_key = os.getenv("MISTRAL_API_KEY")
+if not mistral_api_key:
+    print("Warning: No Mistral API key found. Translation will not work.")
 
-# Initialize Mistral with a custom HTTP client to avoid SSL issues on some systems (like Python 3.14 + HTTP/2)
-http_client = httpx.Client(http2=False)
-client = Mistral(api_key=api_key, client=http_client)
-model = "voxtral-mini-latest"
+# Initialize Mistral for translation only
+if mistral_api_key:
+    # Initialize Mistral with a custom HTTP client to avoid SSL issues on some systems (like Python 3.14 + HTTP/2)
+    http_client = httpx.Client(http2=False)
+    client = Mistral(api_key=mistral_api_key, client=http_client)
+else:
+    client = None
+
 translation_model = "mistral-small-latest"
 
 # AssemblyAI configuration
 assemblyai_api_key = os.getenv("ASSEMBLYAI_API_KEY")
 if assemblyai_api_key:
     aai.settings.api_key = assemblyai_api_key
+
+# Deepgram configuration
+deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
+if deepgram_api_key:
+    deepgram_client = DeepgramClient(deepgram_api_key)
+else:
+    deepgram_client = None
+    print("Warning: No Deepgram API key found. Deepgram transcription will not work.")
 
 
 class Segment(BaseModel):
@@ -148,34 +161,89 @@ def extract_audio_from_video(video_path):
         raise Exception(f"Failed to extract audio: {str(e)}")
 
 
-def transcribe_audio(audio_path, granularity="word", diarize=False):
-    """Transcribe audio using Mistral SDK with the selected granularity and optional diarization."""
+def transcribe_audio_deepgram(audio_path, diarize=False, language_code=None):
+    """Transcribe audio using Deepgram SDK with optional diarization."""
+    if not deepgram_client:
+        raise ValueError("No Deepgram API key found. Set DEEPGRAM_API_KEY environment variable.")
+    
     max_retries = 5
     delay_time = 2
     last_error = None
-    for i in range(max_retries):
+    
+    for attempt in range(max_retries):
         try:
-            with open(audio_path, "rb") as audio_file:
-                # Use the official Mistral SDK client with a structured File object
-                response = client.audio.transcriptions.complete(
-                    model=model,
-                    file=File(
-                        file_name=os.path.basename(audio_path),
-                        content=audio_file,
-                    ),
-                    timestamp_granularities=[granularity] if granularity else None,
-                    diarize=diarize,
-                )
+            with open(audio_path, "rb") as file:
+                buffer_data = file.read()
 
-                # Convert the SDK response model to a dictionary for backward compatibility
-                transcription_response = response.model_dump()
+            payload: FileSource = {
+                "buffer": buffer_data,
+            }
 
+            options = PrerecordedOptions(
+                model="nova-2",
+                smart_format=True,
+                diarize=diarize,
+                language=language_code,
+                utterances=True,
+                paragraphs=True,
+            )
+
+            response = deepgram_client.listen.rest.v("1").transcribe_file(payload, options)
+            
+            # Extract results
+            results = response.results
+            channel = results.channels[0]
+            alternative = channel.alternatives[0]
+            
+            # Words with timestamps
+            words_data = []
+            if hasattr(alternative, "words") and alternative.words:
+                for word in alternative.words:
+                    words_data.append({
+                        "text": word.word,
+                        "start": word.start,
+                        "end": word.end,
+                        "confidence": getattr(word, "confidence", 1.0),
+                        "speaker_id": f"speaker_{getattr(word, 'speaker', 0)}",
+                    })
+            
+            # Segments/utterances with speaker info
+            segments_data = []
+            if hasattr(results, "utterances") and results.utterances:
+                for i, utt in enumerate(results.utterances):
+                    segments_data.append({
+                        "id": i,
+                        "text": utt.transcript,
+                        "start": utt.start,
+                        "end": utt.end,
+                        "speaker": f"speaker_{getattr(utt, 'speaker', 0)}",
+                        "confidence": getattr(utt, "confidence", 1.0),
+                    })
+            else:
+                # Fallback if no utterances but we have text
+                segments_data.append({
+                    "id": 0,
+                    "text": alternative.transcript or "",
+                    "start": 0,
+                    "end": words_data[-1]["end"] if words_data else 0,
+                    "speaker": "speaker_0",
+                    "confidence": 1.0,
+                })
+            
+            transcription_response = {
+                "text": alternative.transcript or "",
+                "words": words_data,
+                "segments": segments_data,
+            }
+            
             return transcription_response
+            
         except Exception as e:
             last_error = e
             time.sleep(delay_time)
+    
     raise Exception(
-        f"Failed to transcribe audio after {max_retries} attempts: {str(last_error)}"
+        f"Failed to transcribe audio with Deepgram after {max_retries} attempts: {str(last_error)}"
     )
 
 
@@ -249,7 +317,7 @@ def transcribe_audio_assemblyai(audio_path, diarize=False, language_code=None):
 
 
 def transcribe_audio_unified(audio_path, diarize=False, language_code=None):
-    """Unified transcription function that uses AssemblyAI by default, with Mistral as fallback."""
+    """Unified transcription function that uses AssemblyAI by default, with Deepgram as fallback."""
     if assemblyai_api_key:
         try:
             result = transcribe_audio_assemblyai(audio_path, diarize=diarize, language_code=language_code)
@@ -261,16 +329,10 @@ def transcribe_audio_unified(audio_path, diarize=False, language_code=None):
             return result
         except Exception as e:
             print(f"AssemblyAI transcription failed: {e}")
-            print("Falling back to Mistral...")
+            print("Falling back to Deepgram...")
     
-    # Fallback to Mistral
-    if diarize:
-        segment_transcription = transcribe_audio(audio_path, granularity="segment", diarize=True)
-        word_transcription = transcribe_audio(audio_path, granularity="word")
-        word_transcription["segments"] = match_words_to_speakers(segment_transcription, word_transcription)
-        return word_transcription
-    else:
-        return transcribe_audio(audio_path, granularity="word")
+    # Fallback to Deepgram
+    return transcribe_audio_deepgram(audio_path, diarize=diarize, language_code=language_code)
 
 
 def split_segments_by_segment_boundaries(word_segments, segment_segments):

@@ -41,6 +41,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Create a non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser \
     && mkdir -p /app/temp_files \
+    && chmod 777 /app/temp_files \
     && chown -R appuser:appuser /app
 
 # Copy application code

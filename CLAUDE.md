@@ -59,22 +59,21 @@ app.py (main entry)
 
 ### Key Processing Pipeline
 ```
-Video → Audio Extraction (FFmpeg) → AssemblyAI (default) / Mistral (fallback) → Subtitle Generation → Video Overlay
+Video → Audio Extraction (FFmpeg) → AssemblyAI (default) / Deepgram (fallback) → Subtitle Generation → Video Overlay
 ```
 
 **Transcription Strategy**:
 - **Primary**: AssemblyAI - single API call with speaker diarization and word-level timestamps
-- **Fallback**: Mistral AI (dual API calls if AssemblyAI fails)
+- **Fallback**: Deepgram (high-speed transcription with diarization)
 - Use `transcribe_audio_unified()` which automatically selects the best available service
 
 ### File Responsibilities
 
 **utils.py (Central Hub)**
-- `transcribe_audio_unified()` - AssemblyAI primary, Mistral fallback (single unified API)
+- `transcribe_audio_unified()` - AssemblyAI primary, Deepgram fallback (single unified API)
 - `transcribe_audio_assemblyai()` - AssemblyAI SDK integration with speaker diarization
-- `transcribe_audio()` - Mistral AI integration (legacy/fallback)
+- `transcribe_audio_deepgram()` - Deepgram SDK integration with speaker diarization
 - `extract_audio_from_video()` - FFmpeg wrapper for audio extraction
-- `match_words_to_speakers()` - Used only for Mistral fallback
 - `generate_subtitles()` - Intelligent subtitle line creation (80 char max, punctuation-aware)
 - `overlay_subtitles()` - FFmpeg video processing with .ass subtitle overlay
 - `translate()` - Mistral AI translation for multilingual subtitles
@@ -90,6 +89,7 @@ Video → Audio Extraction (FFmpeg) → AssemblyAI (default) / Mistral (fallback
 ```bash
 MISTRAL_API_KEY=your_mistral_api_key_here
 ASSEMBLYAI_API_KEY=your_assemblyai_api_key_here
+DEEPGRAM_API_KEY=your_deepgram_api_key_here
 ```
 
 **Docker Environment**
@@ -119,4 +119,5 @@ Context7 MCP is available to fetch up-to-date documentation with code examples.
 - `/llmstxt/dspy_ai_llms_txt` - Complete DSPy framework documentation for programming LLMs
 - `/haasonsaas/dspy-0to1-guide` - DSPy beginner's guide for getting started with the framework
 - `/assemblyai/assemblyai-python-sdk` - AssemblyAI Python SDK for audio transcription and speech AI
-- `/websites/assemblyai` - AssemblyAI developer platform documentation
+PQ- `/websites/assemblyai` - AssemblyAI developer platform documentation
+TH- `/deepgram/deepgram-python-sdk` - Deepgram Python SDK for audio transcription and speech AI
