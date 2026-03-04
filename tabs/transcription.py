@@ -9,8 +9,8 @@ def process_transcription(video_file, diarize=True, progress=gr.Progress()):
         audio_path = extract_audio_from_video(video_path)
 
         if diarize:
-            progress(0.5, desc="Transcribing with diarization and segment granularity...")
-            transcription_response = transcribe_audio(audio_path, granularity="segment", diarize=True)
+            progress(0.5, desc="Transcribing with speaker diarization...")
+            transcription_response = transcribe_audio_unified(audio_path, diarize=True)
             segments = transcription_response.get("segments", [])
 
             if not segments:
@@ -44,8 +44,8 @@ def process_transcription(video_file, diarize=True, progress=gr.Progress()):
                 html_output += f"<span style='color: {color};'><b>{speaker}:</b> {text}</span><br/>"
             html_output += "</div>"
         else:
-            progress(0.5, desc="Transcribing without diarization...")
-            transcription_response = transcribe_audio(audio_path, granularity=None, diarize=False)
+            progress(0.5, desc="Transcribing audio...")
+            transcription_response = transcribe_audio_unified(audio_path, diarize=False)
             text = transcription_response.get("text", "")
 
             if not text:
@@ -82,19 +82,6 @@ def transcription_tab():
 
         with gr.Column(scale=2, elem_classes="output-column"):
             transcription_output = gr.HTML(label="Transcription", visible=True)
-
-        with gr.Row():
-            gr.Examples(
-                examples=[
-                    ["examples/short_example.mp4", False],
-                    ["examples/talk_example.mp4", True],
-                ],
-                inputs=[audio_input, diarize_checkbox],
-                outputs=transcription_output,
-                fn=process_transcription,
-                cache_examples=True,
-                label="Try an Example",
-            )
 
         submit_btn.click(
             fn=process_transcription,

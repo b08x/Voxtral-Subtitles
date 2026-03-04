@@ -8,15 +8,25 @@ import Levenshtein
 from pydantic import BaseModel
 from mistralai import Mistral
 from mistralai.models import File
+import assemblyai as aai
+
+import httpx
 
 # Load API key from environment variable
 api_key = os.getenv("MISTRAL_API_KEY")
 if not api_key:
     raise ValueError("No Mistral API key found.")
 
-client = Mistral(api_key=api_key)
+# Initialize Mistral with a custom HTTP client to avoid SSL issues on some systems (like Python 3.14 + HTTP/2)
+http_client = httpx.Client(http2=False)
+client = Mistral(api_key=api_key, client=http_client)
 model = "voxtral-mini-latest"
 translation_model = "mistral-small-latest"
+
+# AssemblyAI configuration
+assemblyai_api_key = os.getenv("ASSEMBLYAI_API_KEY")
+if assemblyai_api_key:
+    aai.settings.api_key = assemblyai_api_key
 
 
 class Segment(BaseModel):
@@ -160,19 +170,107 @@ def transcribe_audio(audio_path, granularity="word", diarize=False):
                 # Convert the SDK response model to a dictionary for backward compatibility
                 transcription_response = response.model_dump()
 
-                print(
-                    f"\n####\n\n- Granularity: {granularity}\n- Diarize: {diarize}\n- Response:\n",
-                    transcription_response,
-                    "\n\n####\n",
-                )
             return transcription_response
         except Exception as e:
             last_error = e
-            print(f"Attempt {i + 1} failed: {e}")
             time.sleep(delay_time)
     raise Exception(
         f"Failed to transcribe audio after {max_retries} attempts: {str(last_error)}"
     )
+
+
+def transcribe_audio_assemblyai(audio_path, diarize=False, language_code=None):
+    """Transcribe audio using AssemblyAI SDK with optional diarization."""
+    if not assemblyai_api_key:
+        raise ValueError("No AssemblyAI API key found. Set ASSEMBLYAI_API_KEY environment variable.")
+    
+    max_retries = 5
+    delay_time = 2
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            config = aai.TranscriptionConfig(
+                speaker_labels=diarize,
+                language_code=language_code,
+                punctuate=True,
+                format_text=True,
+            )
+            
+            transcriber = aai.Transcriber(config=config)
+            transcript = transcriber.transcribe(audio_path)
+            
+            # Words with timestamps
+            words_data = []
+            if transcript.words:
+                for word in transcript.words:
+                    words_data.append({
+                        "text": word.text,
+                        "start": word.start,
+                        "end": word.end,
+                        "confidence": getattr(word, "confidence", 1.0),
+                    })
+            
+            # Segments/utterances with speaker info
+            segments_data = []
+            if transcript.utterances:
+                for utt in transcript.utterances:
+                    segments_data.append({
+                        "text": utt.text,
+                        "start": utt.start,
+                        "end": utt.end,
+                        "speaker": getattr(utt, "speaker", "speaker_null"),
+                        "confidence": getattr(utt, "confidence", 1.0),
+                    })
+            else:
+                segments_data.append({
+                    "text": transcript.text or "",
+                    "start": 0,
+                    "end": words_data[-1]["end"] if words_data else 0,
+                    "speaker": "speaker_null",
+                    "confidence": 1.0,
+                })
+            
+            transcription_response = {
+                "text": transcript.text or "",
+                "words": words_data,
+                "segments": segments_data,
+            }
+            
+            return transcription_response
+            
+        except Exception as e:
+            last_error = e
+            time.sleep(delay_time)
+    
+    raise Exception(
+        f"Failed to transcribe audio with AssemblyAI after {max_retries} attempts: {str(last_error)}"
+    )
+
+
+def transcribe_audio_unified(audio_path, diarize=False, language_code=None):
+    """Unified transcription function that uses AssemblyAI by default, with Mistral as fallback."""
+    if assemblyai_api_key:
+        try:
+            result = transcribe_audio_assemblyai(audio_path, diarize=diarize, language_code=language_code)
+            if diarize and result.get("segments"):
+                has_speakers = any(seg.get("speaker") != "speaker_null" for seg in result["segments"])
+                if has_speakers:
+                    print("Using AssemblyAI for transcription (speaker diarization enabled)")
+                    return result
+            return result
+        except Exception as e:
+            print(f"AssemblyAI transcription failed: {e}")
+            print("Falling back to Mistral...")
+    
+    # Fallback to Mistral
+    if diarize:
+        segment_transcription = transcribe_audio(audio_path, granularity="segment", diarize=True)
+        word_transcription = transcribe_audio(audio_path, granularity="word")
+        word_transcription["segments"] = match_words_to_speakers(segment_transcription, word_transcription)
+        return word_transcription
+    else:
+        return transcribe_audio(audio_path, granularity="word")
 
 
 def split_segments_by_segment_boundaries(word_segments, segment_segments):
@@ -685,9 +783,7 @@ def translate(segments, target_language):
     """
     max_retries = 5
     retry_delay = 2  # seconds
-    print(segments)
     str_segments = "\n".join([f"{seg['id']}: {seg['content']}" for seg in segments])
-    print(str_segments)
     input_length = len(segments)
 
     for attempt in range(max_retries):
@@ -726,8 +822,6 @@ def translate(segments, target_language):
             # If it's a Pydantic model, convert to dict
             if hasattr(translated_segments, "model_dump"):
                 translated_segments = translated_segments.model_dump()
-
-            print(translated_segments)
 
             assert len(translated_segments["segments"]) == input_length, (
                 f"Mismatch in segment count: input={input_length}, output={len(translated_segments['segments'])}"

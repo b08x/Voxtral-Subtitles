@@ -113,9 +113,9 @@ def process_uploaded_video_multilingual(
         if extract_error:
             raise Exception(extract_error)
 
-        progress(0.2, desc="Transcribing audio with segment granularity...")
+        progress(0.2, desc="Transcribing audio...")
         transcription, transcribe_error = run_with_timeout(
-            lambda: transcribe_audio(audio_path, granularity="segment", diarize=diarize),
+            lambda: transcribe_audio_unified(audio_path, diarize=diarize),
             timeout=300
         )
         if transcribe_error:
@@ -336,50 +336,6 @@ def multilingual_tab():
                         label="Translated Subtitles",
                         visible=True
                     )
-
-        with gr.Row(elem_classes="gradio-examples"):
-            gr.Examples(
-                examples=[
-                    [
-                        "examples/short_example.mp4",
-                        "French",
-                        False,
-                        24,
-                        "None",
-                        "Bottom Center",
-                        "#FFFFFF",
-                        "Liberation Sans",
-                    ],
-                    [
-                        "examples/talk_example.mp4",
-                        "English",
-                        True,
-                        24,
-                        "None",
-                        "Bottom Center",
-                        "#FFFFFF",
-                        "Liberation Sans",
-                    ],
-                ],
-                inputs=[
-                    video_input,
-                    target_language_dropdown,
-                    diarize_checkbox,
-                    font_size_slider,
-                    background_style_radio,
-                    alignment_dropdown,
-                    text_color_picker,
-                    font_dropdown,
-                ],
-                outputs=[
-                    video_output,
-                    error_output,
-                    raw_subtitles_output
-                ],
-                fn=process_uploaded_video_multilingual,
-                cache_examples=True,
-                label="Try an Example",
-            )
 
         submit_btn.click(
             fn=process_uploaded_video_multilingual,

@@ -3,3 +3,10 @@
 .gradio/
 .venv/
 .specs/scratchpad/
+*.mp4
+*.mp3
+*.png
+*.pdf
+*.jpg
+logs/
+temp_*

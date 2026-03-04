@@ -1,6 +1,15 @@
 import gradio as gr
 import threading
-from utils import *
+import os
+from utils import (
+    cleanup_files,
+    extract_audio_from_video,
+    transcribe_audio_unified,
+    generate_subtitles,
+    overlay_subtitles,
+    generate_raw_subtitles_html,
+)
+
 
 def run_with_timeout(func, args, kwargs, timeout=300):
     """Run a function with a timeout."""
@@ -18,11 +27,11 @@ def run_with_timeout(func, args, kwargs, timeout=300):
     thread.join(timeout=timeout)
 
     if thread.is_alive():
-        # If the thread is still running after the timeout, consider it failed
         return None, "Processing timed out after 5 minutes."
     if error[0]:
         return None, error[0]
     return result[0], None
+
 
 def process_uploaded_video(
     video_file,
@@ -34,7 +43,7 @@ def process_uploaded_video(
     highlight_color="#FFA500",
     incoming_color="#808080",
     font_name="Liberation Sans",
-    progress=gr.Progress()
+    progress=gr.Progress(),
 ):
     try:
         cleanup_files()
@@ -44,47 +53,34 @@ def process_uploaded_video(
             lambda: extract_audio_from_video(video_path),
             args=(),
             kwargs={},
-            timeout=300
+            timeout=300,
         )
         if extract_error:
             raise Exception(extract_error)
 
-        progress(0.2, desc="Transcribing audio with segment granularity for diarization...")
-        segment_transcription, transcribe_segment_error = run_with_timeout(
-            lambda: transcribe_audio(audio_path, granularity="segment", diarize=True),
+        # Use unified transcription (AssemblyAI by default, Mistral as fallback)
+        progress(
+            0.2, desc="Transcribing audio (AssemblyAI with speaker diarization)..."
+        )
+        word_transcription, transcribe_error = run_with_timeout(
+            lambda: transcribe_audio_unified(audio_path, diarize=diarize),
             args=(),
             kwargs={},
-            timeout=300
+            timeout=300,
         )
-        if transcribe_segment_error:
-            raise Exception(transcribe_segment_error)
+        if transcribe_error:
+            raise Exception(transcribe_error)
 
-        progress(0.3, desc="Transcribing audio with word granularity...")
-        word_transcription, transcribe_word_error = run_with_timeout(
-            lambda: transcribe_audio(audio_path, granularity="word"),
-            args=(),
-            kwargs={},
-            timeout=300
-        )
-        if transcribe_word_error:
-            raise Exception(transcribe_word_error)
-
-        if diarize:
-            word_transcription["segments"], match_error = run_with_timeout(
-                lambda: match_words_to_speakers(segment_transcription, word_transcription),
-                args=(),
-                kwargs={},
-                timeout=300
-            )
-            if match_error:
-                raise Exception(match_error)
+        # For subtitle generation, we need segment data
+        # AssemblyAI already provides this in word_transcription["segments"]
+        segment_transcription = {"segments": word_transcription.get("segments", [])}
 
         progress(0.4, desc="Generating subtitles...")
         subtitles, generate_error = run_with_timeout(
             lambda: generate_subtitles(word_transcription, segment_transcription),
             args=(),
             kwargs={},
-            timeout=300
+            timeout=300,
         )
         if generate_error:
             raise Exception(generate_error)
@@ -117,7 +113,9 @@ def process_uploaded_video(
 
         for speaker in unique_speakers:
             if speaker != first_speaker:
-                speaker_colors[speaker] = default_colors[len(speaker_colors) % len(default_colors)]
+                speaker_colors[speaker] = default_colors[
+                    len(speaker_colors) % len(default_colors)
+                ]
         speaker_colors["speaker_null"] = text_color
 
         progress(0.5, desc="Generating overlay...")
@@ -134,11 +132,11 @@ def process_uploaded_video(
                 incoming_color,
                 font_name,
                 progress=progress,
-                add_logo=True
+                add_logo=True,
             ),
             args=(),
             kwargs={},
-            timeout=300
+            timeout=300,
         )
         if overlay_error:
             raise Exception(overlay_error)
@@ -159,166 +157,86 @@ def process_uploaded_video(
         progress(0, desc="Failed to process video.")
         return None, str(e), gr.HTML(visible=False)
 
+
 def vo_subtitles_tab():
     with gr.TabItem("VO Subtitles", elem_classes="gradio-tabitem"):
         gr.Markdown("## VO Subtitles", elem_classes="gradio-markdown")
         gr.Markdown(
             "Upload a video to generate a version with subtitles with word-level timestamp granularity.",
-            elem_classes="gradio-markdown"
+            elem_classes="gradio-markdown",
         )
 
         with gr.Row():
-            with gr.Column(scale=1, elem_classes="input-column"):
-                video_input = gr.File(
-                    label="Upload Video",
-                    type="filepath",
-                    file_types=[".mp4", ".mov", ".avi"],
-                    elem_classes="gradio-file"
-                )
-                submit_btn = gr.Button("Generate Video", variant="primary", elem_classes="gradio-button")
+            with gr.Column(scale=3):
+                video_input = gr.Video(label="Upload Video", sources=["upload"])
 
-                with gr.Accordion("Settings", open=False, elem_classes="gradio-accordion"):
-                    diarize_checkbox = gr.Checkbox(
-                        label="Enable Speaker Diarization",
-                        value=True,
-                        info="Check to identify and color-code different speakers using segment granularity timestamps with diarization.",
-                        elem_classes="gradio-checkbox"
-                    )
-                    font_size_slider = gr.Slider(
-                        label="Font Size",
-                        minimum=12,
-                        maximum=48,
-                        step=2,
-                        value=18,
-                        elem_classes="gradio-slider"
-                    )
-                    background_style_radio = gr.Radio(
-                        label="Background Style",
-                        choices=["None", "Outline"],
-                        value="None",
-                        elem_classes="gradio-radio"
-                    )
-                    alignment_dropdown = gr.Dropdown(
-                        label="Subtitle Alignment",
-                        choices=[
-                            "Top Left", "Top Center", "Top Right",
-                            "Middle Left", "Middle Center", "Middle Right",
-                            "Bottom Left", "Bottom Center", "Bottom Right"
-                        ],
-                        value="Bottom Center",
-                        elem_classes="gradio-dropdown"
-                    )
-                    with gr.Group():
-                        text_color_picker = gr.ColorPicker(
-                            label="Default Text Color",
-                            value="#FFFFFF",
-                            elem_classes="gradio-colorpicker"
-                        )
-                        highlight_color_picker = gr.ColorPicker(
-                            label="First Speaker Highlight Color",
-                            value="#FFA500",
-                            elem_classes="gradio-colorpicker"
-                        )
-                        incoming_color_picker = gr.ColorPicker(
-                            label="Incoming Text Color",
-                            value="#808080",
-                            elem_classes="gradio-colorpicker"
-                        )
-                    font_dropdown = gr.Dropdown(
-                        label="Font",
-                        choices=[
-                            "Liberation Sans",
-                            "Liberation Serif",
-                            "Liberation Mono",
-                            "DejaVu Sans",
-                            "DejaVu Serif",
-                            "DejaVu Sans Mono"
-                        ],
-                        value="Liberation Sans",
-                        elem_classes="gradio-dropdown"
-                    )
-
-            with gr.Column(scale=2, elem_classes="output-column"):
-                video_output = gr.Video(
-                    label="Video with Subtitles",
-                    include_audio=True,
-                    elem_classes="gradio-video"
+            with gr.Column(scale=1):
+                diarize = gr.Checkbox(
+                    label="Speaker Diarization",
+                    value=True,
+                    info="Identify different speakers in the video",
                 )
-                error_output = gr.Textbox(
-                    label="Error",
-                    visible=False,
-                    elem_classes="gradio-textbox"
-                )
-                with gr.Accordion("Raw Subtitles", open=False, elem_classes="gradio-accordion"):
-                    raw_subtitles_output = gr.HTML(
-                        label="Raw Subtitles",
-                        visible=True
-                    )
 
-        with gr.Row(elem_classes="gradio-examples"):
-            gr.Examples(
-                examples=[
-                    [
-                        "examples/short_example.mp4",
-                        False,
-                        24,
-                        "None",
+        with gr.Row():
+            with gr.Column():
+                font_size = gr.Slider(
+                    minimum=12, maximum=72, value=24, step=1, label="Font Size"
+                )
+                background_style = gr.Dropdown(
+                    choices=["None", "Box", "Opaque", "Shadow"],
+                    value="None",
+                    label="Background Style",
+                )
+
+            with gr.Column():
+                alignment = gr.Dropdown(
+                    choices=[
                         "Bottom Center",
-                        "#FFFFFF",
-                        "#FFA500",
-                        "#808080",
-                        "Liberation Sans",
+                        "Top Center",
+                        "Bottom Left",
+                        "Bottom Right",
                     ],
-                    [
-                        "examples/talk_example.mp4",
-                        True,
-                        24,
-                        "None",
-                        "Bottom Center",
-                        "#FFFFFF",
-                        "#FFA500",
-                        "#808080",
-                        "Liberation Sans",
-                    ],
-                ],
-                inputs=[
-                    video_input,
-                    diarize_checkbox,
-                    font_size_slider,
-                    background_style_radio,
-                    alignment_dropdown,
-                    text_color_picker,
-                    highlight_color_picker,
-                    incoming_color_picker,
-                    font_dropdown,
-                ],
-                outputs=[
-                    video_output,
-                    error_output,
-                    raw_subtitles_output
-                ],
-                fn=process_uploaded_video,
-                cache_examples=True,
-                label="Try an Example",
-            )
+                    value="Bottom Center",
+                    label="Subtitle Alignment",
+                )
+                font_name = gr.Dropdown(
+                    choices=["Liberation Sans", "Arial", "Helvetica", "Courier New"],
+                    value="Liberation Sans",
+                    label="Font",
+                )
+
+        with gr.Row():
+            with gr.Column():
+                text_color = gr.ColorPicker(label="Text Color", value="#FFFFFF")
+                highlight_color = gr.ColorPicker(
+                    label="Speaker Highlight Color", value="#FFA500"
+                )
+
+            with gr.Column():
+                incoming_color = gr.ColorPicker(
+                    label="Incoming Speaker Color", value="#808080"
+                )
+
+        with gr.Row():
+            submit_btn = gr.Button("Generate Subtitles", variant="primary")
+
+        with gr.Row():
+            video_output = gr.Video(label="Output Video", visible=True)
+            error_output = gr.Textbox(label="Error", visible=False)
+            subtitles_html = gr.HTML(visible=False)
 
         submit_btn.click(
             fn=process_uploaded_video,
             inputs=[
                 video_input,
-                diarize_checkbox,
-                font_size_slider,
-                background_style_radio,
-                alignment_dropdown,
-                text_color_picker,
-                highlight_color_picker,
-                incoming_color_picker,
-                font_dropdown,
+                diarize,
+                font_size,
+                background_style,
+                alignment,
+                text_color,
+                highlight_color,
+                incoming_color,
+                font_name,
             ],
-            outputs=[
-                video_output,
-                error_output,
-                raw_subtitles_output
-            ],
-            api_name="generate_video"
+            outputs=[video_output, error_output, subtitles_html],
         )
