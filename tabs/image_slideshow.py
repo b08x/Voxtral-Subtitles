@@ -3,6 +3,7 @@ import threading
 import json
 import os
 from utils import *
+from components.speaker_colors import build_speaker_colors
 
 def run_with_timeout(func, args, kwargs, timeout=300):
     """Run a function with a timeout."""
@@ -126,25 +127,8 @@ def process_audio_and_images(
         progress(0.95, desc="Creating timeline visualization...")
         timeline_plot = create_timing_visualization(normalized_images, durations)
 
-        # Step 10: Build speaker colors for subtitle preview
-        unique_speakers = []
-        for _, _, _, word_segments, _ in subtitles:
-            if word_segments:
-                for w in word_segments:
-                    speaker_id = w.get("speaker_id")
-                    if speaker_id and speaker_id not in unique_speakers:
-                        unique_speakers.append(speaker_id)
-
-        # Create speaker color mapping using user-selected primary color
-        default_colors = ["#FFFFFF", "#FFD700", "#87CEEB", "#FF6B6B", "#4ECDC4", "#45B7D1"]
-        speaker_colors = {}
-
-        first_speaker = unique_speakers[0] if unique_speakers else "speaker_null"
-        speaker_colors[first_speaker] = primary_colour  # Use user-selected color
-
-        for i, speaker in enumerate(unique_speakers[1:], 1):
-            speaker_colors[speaker] = default_colors[i % len(default_colors)]
-        speaker_colors["speaker_null"] = primary_colour
+        # Step 10: Build speaker colors for subtitle preview using shared component
+        speaker_colors = build_speaker_colors(subtitles, primary_colour, primary_colour, diarize)
 
         # Step 11: Generate subtitle preview HTML
         subtitle_html = generate_raw_subtitles_html(subtitles, speaker_colors)

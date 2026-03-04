@@ -14,6 +14,9 @@ from dotenv import load_dotenv
 
 import httpx
 
+# Import validation components
+from validation.transcription_validator import validate_transcription_response, validate_subtitle_parameters
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -325,31 +328,6 @@ def transcribe_audio_assemblyai(audio_path, diarize=False, language_code=None):
     raise Exception(
         f"Failed to transcribe audio with AssemblyAI after {max_retries} attempts: {str(last_error)}"
     )
-
-
-def validate_transcription_response(response, source_service):
-    """Ensure response has required structure regardless of service"""
-    if response is None:
-        raise ValueError(f"Transcription response is None from {source_service}")
-
-    if not isinstance(response, dict):
-        raise TypeError(f"Expected dict, got {type(response)} from {source_service}")
-
-    required_keys = {'text', 'words', 'segments'}
-    missing_keys = required_keys - set(response.keys())
-    if missing_keys:
-        raise ValueError(f"Missing keys {missing_keys} from {source_service}")
-
-    # Validate structure of words and segments
-    for word in response.get('words', []):
-        if not isinstance(word, dict) or 'text' not in word:
-            raise ValueError(f"Invalid word structure from {source_service}")
-
-    for segment in response.get('segments', []):
-        if not isinstance(segment, dict) or 'text' not in segment:
-            raise ValueError(f"Invalid segment structure from {source_service}")
-
-    return response
 
 
 def transcribe_audio_unified(audio_path, diarize=False, language_code=None):
@@ -795,14 +773,7 @@ def overlay_subtitles(
 
 def generate_raw_subtitles_html(subtitles, speaker_colors, show_timestamps=True):
     """Generate HTML with defensive parameter checking"""
-    if not isinstance(subtitles, list):
-        raise TypeError(f"Expected list of subtitles, got {type(subtitles)}")
-
-    if speaker_colors is None:
-        raise ValueError("speaker_colors parameter is required")
-
-    if not isinstance(speaker_colors, dict):
-        raise TypeError(f"Expected dict for speaker_colors, got {type(speaker_colors)}")
+    validate_subtitle_parameters(subtitles, speaker_colors)
 
     html = "<div style='white-space: pre-wrap; font-size: 16px; line-height: 1.2; color: #E0E0E0; background: #121212; padding: 10px; border-radius: 8px;'>"
 

@@ -1,5 +1,6 @@
 import gradio as gr
 from utils import *
+from components.speaker_colors import build_speaker_colors
 
 def process_transcription(video_file, diarize=True, progress=gr.Progress()):
     try:
@@ -16,25 +17,8 @@ def process_transcription(video_file, diarize=True, progress=gr.Progress()):
             if not segments:
                 return gr.HTML(value="<div style='color: #FF5733; background: #121212; padding: 10px; border-radius: 8px;'>No transcription segments found.</div>", visible=True)
 
-            unique_speakers = set(seg.get("speaker_id", "speaker_null") for seg in segments)
-            speaker_colors = {}
-            default_colors = [
-                "#00FF00",  # Lime
-                "#FF00FF",  # Magenta
-                "#00FFFF",  # Cyan
-                "#FF0000",  # Red
-                "#FFFF00",  # Yellow
-                "#0000FF",  # Blue
-                "#FF8000",  # Orange
-                "#8000FF",  # Purple
-                "#00FF80",  # Spring Green
-                "#FF0080",  # Pink
-                "#80FF00",  # Chartreuse
-                "#0080FF",  # Azure
-            ]
-            for i, speaker in enumerate(unique_speakers):
-                speaker_colors[speaker] = default_colors[i % len(default_colors)]
-            speaker_colors["speaker_null"] = "#FFFFFF"
+            # Build speaker colors using shared component
+            speaker_colors = build_speaker_colors(segments, "#FFFFFF", "#FFFFFF", diarize=True)
 
             html_output = "<div style='white-space: pre-wrap; font-size: 16px; line-height: 1.5; background: #121212; padding: 10px; border-radius: 8px;'>"
             for seg in segments:

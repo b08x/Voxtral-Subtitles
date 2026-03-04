@@ -9,6 +9,7 @@ from utils import (
     overlay_subtitles,
     generate_raw_subtitles_html,
 )
+from components.speaker_colors import build_speaker_colors
 
 
 def run_with_timeout(func, args, kwargs, timeout=300):
@@ -85,38 +86,8 @@ def process_uploaded_video(
         if generate_error:
             raise Exception(generate_error)
 
-        unique_speakers = []
-        for _, _, _, word_segments, _ in subtitles:
-            if word_segments:
-                for w in word_segments:
-                    if not w.get("speaker_id") in unique_speakers:
-                        unique_speakers.append(w.get("speaker_id"))
-
-        default_colors = [
-            "#00FF00",  # Lime
-            "#FF00FF",  # Magenta
-            "#00FFFF",  # Cyan
-            "#FF0000",  # Red
-            "#FFFF00",  # Yellow
-            "#0000FF",  # Blue
-            "#FF8000",  # Orange
-            "#8000FF",  # Purple
-            "#00FF80",  # Spring Green
-            "#FF0080",  # Pink
-            "#80FF00",  # Chartreuse
-            "#0080FF",  # Azure
-        ]
-        speaker_colors = {}
-
-        first_speaker = unique_speakers[0] if unique_speakers else "speaker_null"
-        speaker_colors[first_speaker] = highlight_color
-
-        for speaker in unique_speakers:
-            if speaker != first_speaker:
-                speaker_colors[speaker] = default_colors[
-                    len(speaker_colors) % len(default_colors)
-                ]
-        speaker_colors["speaker_null"] = text_color
+        # Build speaker colors using shared component
+        speaker_colors = build_speaker_colors(subtitles, highlight_color, text_color, diarize=True)
 
         progress(0.5, desc="Generating overlay...")
         processed_video, overlay_error = run_with_timeout(

@@ -1,6 +1,7 @@
 import gradio as gr
 import threading
 from utils import *
+from components.speaker_colors import build_speaker_colors
 
 def run_with_timeout(func, args=(), kwargs={}, timeout=300):
     """Run a function with a timeout."""
@@ -176,35 +177,8 @@ def process_uploaded_video_multilingual(
         for i, (_, _, text, _) in enumerate(final_subtitles):
             print(f"Subtitle {i}: {len(text)} chars - '{text[:50]}...'")
 
-        unique_speakers = []
-        seen = set()
-        for _, _, _, speaker in final_subtitles:
-            if speaker not in seen:
-                seen.add(speaker)
-                unique_speakers.append(speaker)
-
-        default_colors = [
-            "#00FF00",  # Lime
-            "#FF00FF",  # Magenta
-            "#00FFFF",  # Cyan
-            "#FF0000",  # Red
-            "#FFFF00",  # Yellow
-            "#0000FF",  # Blue
-            "#FF8000",  # Orange
-            "#8000FF",  # Purple
-            "#00FF80",  # Spring Green
-            "#FF0080",  # Pink
-            "#80FF00",  # Chartreuse
-            "#0080FF",  # Azure
-        ]
-        speaker_colors = {}
-        for i, speaker in enumerate(unique_speakers):
-            speaker_colors[speaker] = default_colors[i % len(default_colors)]
-        speaker_colors["speaker_null"] = text_color
-
-        if not diarize:
-            first_speaker = next(iter(unique_speakers)) if unique_speakers else "speaker_null"
-            speaker_colors[first_speaker] = text_color
+        # Build speaker colors using shared component
+        speaker_colors = build_speaker_colors(final_subtitles, text_color, text_color, diarize)
 
         progress(0.5, desc="Generating overlay...")
         processed_video, overlay_error = run_with_timeout(
