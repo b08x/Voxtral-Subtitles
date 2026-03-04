@@ -4,7 +4,6 @@ import re
 import json
 import time
 from pysubs2 import SSAFile, SSAEvent, Color
-import Levenshtein
 from pydantic import BaseModel
 from mistralai import Mistral
 from mistralai.models import File
@@ -20,6 +19,15 @@ from validation.transcription_validator import validate_transcription_response, 
 from models.subtitles import (
     SubtitleTuple, SpeakerColors, TranscriptionResponse,
     SubtitleSettings, ValidationResult, ProcessingResult
+)
+
+# Import new core safety utilities
+from core import (
+    TempFileManager, get_temp_filename, run_with_timeout, run_ffmpeg_safe,
+    ValidationError, validate_video_file, validate_audio_file, validate_file_size,
+    sanitize_filename, validate_api_key, SubprocessResult, TimeoutError,
+    validate_subprocess_result, validate_resolution, validate_duration_range,
+    validate_image_file, validate_image_sequence, validate_subtitle_count
 )
 
 # Load environment variables from .env file
@@ -67,9 +75,16 @@ TEMP_DIR = os.getenv("TEMP_DIR", ".")
 
 
 def cleanup_files():
-    """Remove all temporary and output files."""
+    """
+    Remove legacy temporary and output files.
+
+    Note: This function is deprecated in favor of TempFileManager.
+    It only cleans up legacy hardcoded filenames for backward compatibility.
+    New code should use TempFileManager for automatic cleanup.
+    """
     try:
-        files_to_clean = [
+        # Legacy hardcoded files (for backward compatibility only)
+        legacy_files = [
             os.path.join(TEMP_DIR, f)
             for f in [
                 "temp_video.mp4",
@@ -82,95 +97,124 @@ def cleanup_files():
                 "gpt4o_output.mp4",
             ]
         ]
-        for file in files_to_clean:
+
+        cleaned_count = 0
+        for file in legacy_files:
             if os.path.exists(file):
                 os.remove(file)
+                cleaned_count += 1
+
+        # Also trigger global cleanup of orphaned temp files
+        orphaned_count = TempFileManager.cleanup_all_global()
+
+        if cleaned_count > 0 or orphaned_count > 0:
+            print(f"Cleanup completed: {cleaned_count} legacy files, {orphaned_count} orphaned files")
+
     except Exception as e:
-        print(e)
+        print(f"Cleanup error: {e}")
 
 
-def extract_audio_from_video(video_path):
-    """Extract audio from video or return the audio path if the input is already an audio file."""
-    audio_path = os.path.join(TEMP_DIR, "temp_audio.mp3")
+def extract_audio_from_video(video_path, temp_manager: Optional[TempFileManager] = None):
+    """
+    Extract audio from video or return the audio path if the input is already an audio file.
+
+    Args:
+        video_path: Path to input video/audio file
+        temp_manager: Optional TempFileManager for cleanup tracking
+
+    Returns:
+        Path to extracted audio file
+
+    Raises:
+        ValidationError: If input file is invalid
+        TimeoutError: If extraction times out
+        Exception: If extraction fails for other reasons
+    """
+    # Input validation
+    if not os.path.exists(video_path):
+        raise ValidationError(f"Input file does not exist: {video_path}")
+
+    # Create temp manager if not provided
+    if temp_manager is None:
+        temp_manager = TempFileManager()
+
     audio_extensions = {".mp3", ".wav", ".ogg", ".flac", ".aac"}
+    file_ext = os.path.splitext(video_path)[1].lower()
 
-    if os.path.splitext(video_path)[1].lower() in audio_extensions:
+    # If already audio file, validate and return
+    if file_ext in audio_extensions:
+        validate_audio_file(video_path)
         return video_path
 
+    # Validate as video file
+    validate_video_file(video_path)
+
+    # Generate unique temp audio filename
+    audio_path = temp_manager.create_temp_file(".mp3", "extracted_audio")
+
     try:
-        # Use absolute path for FFmpeg output
         abs_audio_path = os.path.abspath(audio_path)
 
-        # 1. Detect if audio stream exists
+        # 1. Detect if audio stream exists (with timeout)
         probe_cmd = [
             "ffprobe",
-            "-v",
-            "error",
-            "-select_streams",
-            "a",
-            "-show_entries",
-            "stream=codec_type",
-            "-of",
-            "csv=p=0",
+            "-v", "error",
+            "-select_streams", "a",
+            "-show_entries", "stream=codec_type",
+            "-of", "csv=p=0",
             video_path,
         ]
-        probe_result = subprocess.run(probe_cmd, capture_output=True, text=True)
+
+        probe_result = run_with_timeout(probe_cmd, timeout=30)
+        validate_subprocess_result(probe_result, "FFprobe audio detection")
         has_audio = "audio" in probe_result.stdout.lower()
 
         if has_audio:
             # Normal extraction
             ffmpeg_cmd = [
                 "ffmpeg",
-                "-v",
-                "error",
+                "-v", "error",
                 "-y",
-                "-i",
-                video_path,
-                "-vn",
-                "-acodec",
-                "libmp3lame",
-                "-q:a",
-                "2",
+                "-i", video_path,
+                "-vn",  # No video
+                "-acodec", "libmp3lame",
+                "-q:a", "2",  # High quality
                 abs_audio_path,
             ]
         else:
-            # Video has no audio stream; generate a silent audio track
-            duration = get_video_duration(video_path)
+            # Video has no audio stream; generate silent audio track
+            duration = get_video_duration(video_path, temp_manager)
             print(f"No audio stream detected. Generating {duration}s of silence.")
             ffmpeg_cmd = [
                 "ffmpeg",
-                "-v",
-                "error",
+                "-v", "error",
                 "-y",
-                "-f",
-                "lavfi",
-                "-i",
-                f"anullsrc=channel_layout=mono:sample_rate=44100",
-                "-t",
-                str(duration),
-                "-acodec",
-                "libmp3lame",
-                "-q:a",
-                "2",
+                "-f", "lavfi",
+                "-i", "anullsrc=channel_layout=mono:sample_rate=44100",
+                "-t", str(duration),
+                "-acodec", "libmp3lame",
+                "-q:a", "2",
                 abs_audio_path,
             ]
 
-        subprocess.run(
-            ffmpeg_cmd,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True,
-        )
+        # Execute FFmpeg with timeout (longer for actual processing)
+        result = run_ffmpeg_safe(ffmpeg_cmd, timeout=300)  # 5 minutes
+        validate_subprocess_result(result, "FFmpeg audio extraction")
+
+        print(f"Audio extraction completed: {abs_audio_path}")
         return audio_path
+
+    except (ValidationError, TimeoutError):
+        # Re-raise validation and timeout errors as-is
+        raise
     except subprocess.CalledProcessError as e:
-        print(f"FFmpeg Error (Extraction): {e.stderr}")
-        cleanup_files()
-        raise Exception(f"Failed to extract audio: {e.stderr}")
+        error_msg = f"FFmpeg audio extraction failed: {e.stderr if e.stderr else str(e)}"
+        print(f"FFmpeg Error (Extraction): {error_msg}")
+        raise Exception(error_msg)
     except Exception as e:
-        print(f"General Error (Extraction): {str(e)}")
-        cleanup_files()
-        raise Exception(f"Failed to extract audio: {str(e)}")
+        error_msg = f"Audio extraction failed: {str(e)}"
+        print(f"General Error (Extraction): {error_msg}")
+        raise Exception(error_msg)
 
 
 def transcribe_audio_deepgram(audio_path, diarize=False, language_code=None):
@@ -663,21 +707,44 @@ def create_ass_file(
     sub.save(srt_path)
 
 
-def get_video_duration(video_path):
+def get_video_duration(video_path, temp_manager: Optional[TempFileManager] = None):
+    """
+    Get video duration in seconds using FFprobe with timeout protection.
+
+    Args:
+        video_path: Path to video file
+        temp_manager: Optional TempFileManager (unused but for API consistency)
+
+    Returns:
+        Duration in seconds as float
+
+    Raises:
+        ValidationError: If file is invalid
+        TimeoutError: If FFprobe times out
+        ValueError: If duration cannot be parsed
+    """
+    # Validate input file
+    if not os.path.exists(video_path):
+        raise ValidationError(f"Video file does not exist: {video_path}")
+
     cmd = [
         "ffprobe",
-        "-v",
-        "error",
-        "-show_entries",
-        "format=duration",
-        "-of",
-        "default=noprint_wrappers=1:nokey=1",
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
         video_path,
     ]
-    result = subprocess.run(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-    )
-    return float(result.stdout.strip())
+
+    result = run_with_timeout(cmd, timeout=30)  # 30 seconds should be plenty
+    validate_subprocess_result(result, "FFprobe duration query")
+
+    try:
+        duration = float(result.stdout.strip())
+        if duration <= 0:
+            raise ValueError(f"Invalid duration: {duration}")
+        return duration
+    except (ValueError, TypeError) as e:
+        raise ValueError(f"Could not parse video duration: {result.stdout.strip()}")  from e
 
 
 def overlay_subtitles(
@@ -697,19 +764,60 @@ def overlay_subtitles(
     logo_path="videologo.png",
     logo_scale=0.5,
     padding=10,
+    temp_manager: Optional[TempFileManager] = None,
     **kwargs
 ):
     """
-    Overlays subtitles on the video, with an option to add a logo in the bottom right corner.
+    Overlays subtitles on the video with proper safety and temp file management.
 
     Args:
-        add_logo (bool): If True, adds the logo to the video.
-        logo_path (str): Path to the logo image.
-        logo_scale (float): Scale factor for the logo (default: 0.1).
-        padding (int): Padding around the logo (default: 10).
+        video_path: Path to input video file
+        audio_path: Path to input audio file
+        subtitles: List of subtitle tuples
+        font_size: Subtitle font size (default: 24)
+        background_style: Subtitle background style
+        alignment: Subtitle alignment position
+        text_color: Default text color (hex format)
+        speaker_colors: Dict mapping speakers to colors
+        incoming_color: Color for incoming/unidentified speakers
+        font_name: Font family name
+        output_path: Output filename (will be placed in temp dir)
+        progress: Optional progress callback function
+        add_logo: Whether to add logo overlay
+        logo_path: Path to logo image file
+        logo_scale: Logo scale factor
+        padding: Logo padding
+        temp_manager: Optional TempFileManager for cleanup tracking
+        **kwargs: Additional parameters passed to create_ass_file
+
+    Returns:
+        Path to output video file with subtitles
+
+    Raises:
+        ValidationError: If input files are invalid
+        TimeoutError: If processing times out
+        Exception: If subtitle overlay fails
     """
+    # Input validation
+    validate_video_file(video_path)
+    validate_audio_file(audio_path)
+
+    if not subtitles:
+        raise ValidationError("No subtitles provided")
+
+    if add_logo and logo_path:
+        validate_image_file(logo_path)
+
+    # Create temp manager if not provided
+    if temp_manager is None:
+        temp_manager = TempFileManager()
+
     try:
-        ass_path = os.path.join(TEMP_DIR, "subtitles.ass")
+        # Generate unique temp filenames to prevent race conditions
+        ass_path = temp_manager.create_temp_file(".ass", "subtitles")
+        output_temp_path = temp_manager.create_temp_file(".mp4", "overlayed_video")
+
+        # Create ASS subtitle file
         create_ass_file(
             subtitles,
             ass_path,
@@ -722,13 +830,10 @@ def overlay_subtitles(
             **kwargs
         )
 
-        output_path = os.path.join(TEMP_DIR, "output_video.mp4")
-        if os.path.exists(output_path):
-            os.remove(output_path)
-
-        total_duration = get_video_duration(video_path)
+        # Get video duration for progress tracking
+        total_duration = get_video_duration(video_path, temp_manager)
         abs_ass_path = os.path.abspath(ass_path)
-        abs_output_path = os.path.abspath(output_path)
+        abs_output_path = os.path.abspath(output_temp_path)
 
         # Determine video encoder based on hardware availability
         video_encoder = "libx264"
@@ -736,48 +841,60 @@ def overlay_subtitles(
         if compute_device == "CUDA":
             video_encoder = "h264_nvenc"
 
+        # Build FFmpeg command
         cmd = [
             "ffmpeg",
-            "-y",
-            "-i",
-            video_path,
-            "-i",
-            audio_path,
-            "-vf",
-            f"ass={abs_ass_path}",
-            "-c:v",
-            video_encoder,
-            "-preset",
-            "ultrafast",
-            "-c:a",
-            "copy",
-            "-strict",
-            "experimental",
+            "-y",  # Overwrite output files
+            "-i", video_path,
+            "-i", audio_path,
+            "-vf", f"ass={abs_ass_path}",
+            "-c:v", video_encoder,
+            "-preset", "ultrafast",
+            "-c:a", "copy",
+            "-strict", "experimental",
             abs_output_path,
         ]
 
-        process = subprocess.Popen(cmd, stderr=subprocess.PIPE, universal_newlines=True)
-        stderr_output = []
-        for line in process.stderr:
-            stderr_output.append(line)
-            time_match = re.search(r"time=(\d+):(\d+):(\d+\.\d+)", line)
-            if time_match:
-                hours, minutes, seconds = time_match.groups()
-                current_time = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
-                progress(
-                    0.5 + (0.5 * (current_time / total_duration)),
-                    desc=f"Overlay creation...",
-                )
-        process.wait()
-        if process.returncode != 0:
-            raise Exception(
-                f"FFmpeg failed to overlay subtitles. Error: {''.join(stderr_output)}"
-            )
+        # Progress callback wrapper for FFmpeg stderr parsing
+        def progress_callback(stderr_line):
+            if progress and stderr_line:
+                time_match = re.search(r"time=(\d+):(\d+):(\d+\.\d+)", stderr_line)
+                if time_match:
+                    hours, minutes, seconds = time_match.groups()
+                    current_time = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+                    progress_ratio = min(current_time / total_duration, 1.0)
+                    progress(
+                        0.5 + (0.5 * progress_ratio),
+                        desc="Overlaying subtitles..."
+                    )
 
-        return output_path
+        # Execute FFmpeg with timeout and progress monitoring
+        result = run_ffmpeg_safe(
+            cmd,
+            timeout=max(600, int(total_duration * 3)),  # At least 10 min, or 3x video length
+            progress_callback=progress_callback
+        )
+
+        validate_subprocess_result(result, "FFmpeg subtitle overlay")
+
+        print(f"Subtitle overlay completed: {abs_output_path}")
+
+        # Move to final output location if specified differently
+        final_output = os.path.join(TEMP_DIR, sanitize_filename(output_path))
+        if final_output != output_temp_path:
+            import shutil
+            shutil.move(output_temp_path, final_output)
+            return final_output
+
+        return output_temp_path
+
+    except (ValidationError, TimeoutError):
+        # Re-raise validation and timeout errors as-is
+        raise
     except Exception as e:
-        print(e)
-        raise Exception(f"Failed to overlay subtitles: {str(e)}")
+        error_msg = f"Failed to overlay subtitles: {str(e)}"
+        print(f"Subtitle overlay error: {error_msg}")
+        raise Exception(error_msg)
 
 
 def generate_raw_subtitles_html(
@@ -1059,18 +1176,44 @@ def normalize_image_resolution(images, target_resolution="1920x1080", aspect_han
 
 
 def get_audio_duration(audio_path):
-    """Get duration of audio file in seconds"""
+    """
+    Get duration of audio file in seconds using FFprobe with timeout protection.
+
+    Args:
+        audio_path: Path to audio file
+
+    Returns:
+        Duration in seconds as float
+
+    Raises:
+        ValidationError: If audio file is invalid
+        TimeoutError: If FFprobe times out
+        ValueError: If duration cannot be parsed
+    """
+    # Validate input file
+    validate_audio_file(audio_path)
+
     try:
-        result = subprocess.run([
+        cmd = [
             'ffprobe', '-v', 'quiet', '-print_format', 'json',
             '-show_format', audio_path
-        ], capture_output=True, text=True, check=True)
+        ]
+
+        result = run_with_timeout(cmd, timeout=30)
+        validate_subprocess_result(result, "FFprobe audio duration query")
 
         metadata = json.loads(result.stdout)
         duration = float(metadata['format']['duration'])
+
+        if duration <= 0:
+            raise ValueError(f"Invalid audio duration: {duration}")
+
         return duration
-    except Exception as e:
-        raise ValueError(f"Failed to get audio duration: {str(e)}")
+
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Could not parse FFprobe output: {result.stdout}") from e
+    except (KeyError, TypeError, ValueError) as e:
+        raise ValueError(f"Failed to extract audio duration from metadata") from e
 
 
 def calculate_auto_durations(images, audio_duration):
@@ -1185,25 +1328,76 @@ def parse_csv_durations(csv_file, images):
         raise ValueError(f"Failed to parse CSV: {str(e)}")
 
 
-def create_image_sequence_video(images, durations, audio_path, resolution="1920x1080"):
-    """Generate MP4 using FFmpeg with image sequence and audio"""
-    temp_dir = "temp_video_creation"
-    os.makedirs(temp_dir, exist_ok=True)
+def create_image_sequence_video(images, durations, audio_path, resolution="1920x1080",
+                               temp_manager: Optional[TempFileManager] = None):
+    """
+    Generate MP4 using FFmpeg with image sequence and audio - with proper safety measures.
+
+    Args:
+        images: List of image info dicts with 'path' key
+        durations: List of durations for each image (in seconds)
+        audio_path: Path to audio file to overlay
+        resolution: Video resolution as "WIDTHxHEIGHT" (default: "1920x1080")
+        temp_manager: Optional TempFileManager for cleanup tracking
+
+    Returns:
+        Path to final video file
+
+    Raises:
+        ValidationError: If inputs are invalid
+        TimeoutError: If processing times out
+        ValueError: If video creation fails
+    """
+    # Input validation
+    if not images:
+        raise ValidationError("No images provided")
+
+    if len(images) != len(durations):
+        raise ValidationError(f"Mismatch: {len(images)} images vs {len(durations)} durations")
+
+    validate_audio_file(audio_path)
+
+    # Validate resolution format
+    try:
+        width, height = resolution.split('x')
+        validate_resolution(int(width), int(height))
+    except ValueError:
+        raise ValidationError(f"Invalid resolution format: {resolution} (expected 'WIDTHxHEIGHT')")
+
+    # Validate all image paths
+    for i, image_info in enumerate(images):
+        if 'path' not in image_info:
+            raise ValidationError(f"Image {i}: missing 'path' key")
+        validate_image_file(image_info['path'])
+
+    # Validate durations
+    total_duration = sum(durations)
+    for i, duration in enumerate(durations):
+        if duration <= 0:
+            raise ValidationError(f"Invalid duration for image {i}: {duration}")
+
+    validate_duration_range(total_duration)
+
+    # Create temp manager if not provided
+    if temp_manager is None:
+        temp_manager = TempFileManager()
 
     try:
+        # Create unique temp directory
+        temp_dir = temp_manager.create_temp_dir("_video_creation")
+
         # Create individual video segments for each image
         segment_files = []
 
         for i, (image_info, duration) in enumerate(zip(images, durations)):
             segment_file = os.path.join(temp_dir, f"segment_{i:04d}.mp4")
 
-            # Create video segment from image with specific duration - use basic settings
-            width, height = resolution.split('x')
+            # Create video segment from image with specific duration
             cmd = [
                 'ffmpeg', '-y',
                 '-loop', '1',
                 '-i', image_info['path'],
-                '-c:v', 'mpeg4',  # Use mpeg4 instead of libx264 for compatibility
+                '-c:v', 'mpeg4',  # Use mpeg4 for compatibility
                 '-t', str(duration),
                 '-pix_fmt', 'yuv420p',
                 '-r', '24',  # 24 fps
@@ -1212,9 +1406,10 @@ def create_image_sequence_video(images, durations, audio_path, resolution="1920x
                 segment_file
             ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                raise ValueError(f"Failed to create segment {i}: {result.stderr}")
+            # Timeout based on duration (at least 30 seconds, or 10x the segment duration)
+            segment_timeout = max(30, int(duration * 10))
+            result = run_ffmpeg_safe(cmd, timeout=segment_timeout)
+            validate_subprocess_result(result, f"FFmpeg segment creation {i}")
 
             segment_files.append(segment_file)
 
@@ -1235,30 +1430,38 @@ def create_image_sequence_video(images, durations, audio_path, resolution="1920x
             video_only_file
         ]
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise ValueError(f"Failed to concatenate segments: {result.stderr}")
+        # Timeout based on total video length
+        concat_timeout = max(60, int(total_duration * 2))
+        result = run_ffmpeg_safe(cmd, timeout=concat_timeout)
+        validate_subprocess_result(result, "FFmpeg segment concatenation")
 
-        # Add audio to video - use compatible audio codec
+        # Add audio to video
         final_video_file = os.path.join(temp_dir, "final_video_with_audio.mp4")
         cmd = [
             'ffmpeg', '-y',
             '-i', video_only_file,
             '-i', audio_path,
             '-c:v', 'copy',
-            '-c:a', 'mp3',  # Use mp3 instead of aac for compatibility
+            '-c:a', 'mp3',  # Use mp3 for compatibility
             '-shortest',
             final_video_file
         ]
 
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise ValueError(f"Failed to add audio: {result.stderr}")
+        # Timeout for audio mixing
+        audio_timeout = max(120, int(total_duration * 2))
+        result = run_ffmpeg_safe(cmd, timeout=audio_timeout)
+        validate_subprocess_result(result, "FFmpeg audio addition")
 
+        print(f"Video creation completed: {final_video_file}")
         return final_video_file
 
+    except (ValidationError, TimeoutError):
+        # Re-raise validation and timeout errors as-is
+        raise
     except Exception as e:
-        raise ValueError(f"Video creation failed: {str(e)}")
+        error_msg = f"Video creation failed: {str(e)}"
+        print(f"Video creation error: {error_msg}")
+        raise ValueError(error_msg)
 
 
 def create_timing_visualization(images, durations):

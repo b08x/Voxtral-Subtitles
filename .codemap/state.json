@@ -1,10 +1,28 @@
 {
-  "updated_at": "2026-02-13T15:19:40.99008354-05:00",
-  "file_count": 20,
+  "updated_at": "2026-03-04T09:17:34.025829399-05:00",
+  "file_count": 41,
   "hubs": [
-    "utils.py"
+    "components/speaker_colors.py",
+    "models/subtitles.py",
+    "utils.py",
+    "validation/transcription_validator.py"
   ],
   "importers": {
+    "components/speaker_colors.py": [
+      "tabs/multilingual.py",
+      "tabs/transcription.py",
+      "tabs/vo_subtitles.py",
+      "tests/test_speaker_colors.py",
+      "tabs/image_slideshow.py"
+    ],
+    "models/subtitles.py": [
+      "utils.py",
+      "components/speaker_colors.py",
+      "validation/transcription_validator.py"
+    ],
+    "tabs/image_slideshow.py": [
+      "app.py"
+    ],
     "tabs/multilingual.py": [
       "app.py"
     ],
@@ -17,24 +35,235 @@
     "utils.py": [
       "tabs/multilingual.py",
       "tabs/transcription.py",
-      "tabs/vo_subtitles.py"
+      "tabs/vo_subtitles.py",
+      "tests/test_subtitle_generation.py",
+      "tabs/image_slideshow.py"
+    ],
+    "validation/transcription_validator.py": [
+      "utils.py",
+      "tests/test_transcription_pipeline.py",
+      "tests/test_subtitle_generation.py"
     ]
   },
   "imports": {
     "app.py": [
       "tabs/vo_subtitles.py",
       "tabs/multilingual.py",
-      "tabs/transcription.py"
+      "tabs/transcription.py",
+      "tabs/image_slideshow.py"
+    ],
+    "components/speaker_colors.py": [
+      "models/subtitles.py"
+    ],
+    "tabs/image_slideshow.py": [
+      "utils.py",
+      "components/speaker_colors.py"
     ],
     "tabs/multilingual.py": [
-      "utils.py"
+      "utils.py",
+      "components/speaker_colors.py"
     ],
     "tabs/transcription.py": [
-      "utils.py"
+      "utils.py",
+      "components/speaker_colors.py"
     ],
     "tabs/vo_subtitles.py": [
+      "utils.py",
+      "components/speaker_colors.py"
+    ],
+    "tests/test_speaker_colors.py": [
+      "components/speaker_colors.py"
+    ],
+    "tests/test_subtitle_generation.py": [
+      "validation/transcription_validator.py",
       "utils.py"
+    ],
+    "tests/test_transcription_pipeline.py": [
+      "validation/transcription_validator.py"
+    ],
+    "utils.py": [
+      "validation/transcription_validator.py",
+      "models/subtitles.py"
+    ],
+    "validation/transcription_validator.py": [
+      "models/subtitles.py"
     ]
   },
-  "recent_events": []
+  "recent_events": [
+    {
+      "time": "2026-03-04T09:03:28.479369697-05:00",
+      "op": "CREATE",
+      "path": "core/__init__.py",
+      "lang": "python",
+      "lines": 8,
+      "delta": 8,
+      "size_delta": 310
+    },
+    {
+      "time": "2026-03-04T09:03:53.632401017-05:00",
+      "op": "CREATE",
+      "path": "core/temp_manager.py",
+      "lang": "python",
+      "lines": 193,
+      "delta": 193,
+      "size_delta": 6073
+    },
+    {
+      "time": "2026-03-04T09:04:21.040401156-05:00",
+      "op": "CREATE",
+      "path": "core/subprocess_utils.py",
+      "lang": "python",
+      "lines": 234,
+      "delta": 234,
+      "size_delta": 7170
+    },
+    {
+      "time": "2026-03-04T09:04:53.9208877-05:00",
+      "op": "CREATE",
+      "path": "core/validation.py",
+      "lang": "python",
+      "lines": 278,
+      "delta": 278,
+      "size_delta": 8154
+    },
+    {
+      "time": "2026-03-04T09:05:04.42455893-05:00",
+      "op": "CREATE",
+      "path": "core/__init__.py",
+      "lang": "python",
+      "lines": 33,
+      "delta": 25,
+      "size_delta": 917
+    },
+    {
+      "time": "2026-03-04T09:05:51.434777465-05:00",
+      "op": "CREATE",
+      "path": "utils.py",
+      "lang": "python",
+      "lines": 1483,
+      "delta": 8,
+      "size_delta": 319,
+      "dirty": true,
+      "importers": 5,
+      "imports": 2,
+      "is_hub": true
+    },
+    {
+      "time": "2026-03-04T09:06:16.12687015-05:00",
+      "op": "CREATE",
+      "path": "utils.py",
+      "lang": "python",
+      "lines": 1502,
+      "delta": 19,
+      "size_delta": 996,
+      "dirty": true,
+      "importers": 5,
+      "imports": 2,
+      "is_hub": true
+    },
+    {
+      "time": "2026-03-04T09:06:28.718203162-05:00",
+      "op": "CREATE",
+      "path": "utils.py",
+      "lang": "python",
+      "lines": 1519,
+      "delta": 17,
+      "size_delta": 647,
+      "dirty": true,
+      "importers": 5,
+      "imports": 2,
+      "is_hub": true
+    },
+    {
+      "time": "2026-03-04T09:06:52.855046867-05:00",
+      "op": "CREATE",
+      "path": "utils.py",
+      "lang": "python",
+      "lines": 1542,
+      "delta": 23,
+      "size_delta": 885,
+      "dirty": true,
+      "importers": 5,
+      "imports": 2,
+      "is_hub": true
+    },
+    {
+      "time": "2026-03-04T09:08:09.052147319-05:00",
+      "op": "CREATE",
+      "path": "utils.py",
+      "lang": "python",
+      "lines": 1593,
+      "delta": 51,
+      "size_delta": 2176,
+      "dirty": true,
+      "importers": 5,
+      "imports": 2,
+      "is_hub": true
+    },
+    {
+      "time": "2026-03-04T09:08:27.884519417-05:00",
+      "op": "CREATE",
+      "path": "utils.py",
+      "lang": "python",
+      "lines": 1592,
+      "delta": -1,
+      "size_delta": -39,
+      "dirty": true,
+      "importers": 5,
+      "imports": 2,
+      "is_hub": true
+    },
+    {
+      "time": "2026-03-04T09:09:35.04392139-05:00",
+      "op": "CREATE",
+      "path": "utils.py",
+      "lang": "python",
+      "lines": 1618,
+      "delta": 26,
+      "size_delta": 690,
+      "dirty": true,
+      "importers": 5,
+      "imports": 2,
+      "is_hub": true
+    },
+    {
+      "time": "2026-03-04T09:10:05.272329908-05:00",
+      "op": "CREATE",
+      "path": "utils.py",
+      "lang": "python",
+      "lines": 1678,
+      "delta": 60,
+      "size_delta": 2134,
+      "dirty": true,
+      "importers": 5,
+      "imports": 2,
+      "is_hub": true
+    },
+    {
+      "time": "2026-03-04T09:16:46.961397751-05:00",
+      "op": "CREATE",
+      "path": "utils.py",
+      "lang": "python",
+      "lines": 1679,
+      "delta": 1,
+      "size_delta": 121,
+      "dirty": true,
+      "importers": 5,
+      "imports": 2,
+      "is_hub": true
+    },
+    {
+      "time": "2026-03-04T09:17:34.022374592-05:00",
+      "op": "CREATE",
+      "path": "utils.py",
+      "lang": "python",
+      "lines": 1678,
+      "delta": -1,
+      "size_delta": -19,
+      "dirty": true,
+      "importers": 5,
+      "imports": 2,
+      "is_hub": true
+    }
+  ]
 }

@@ -1,0 +1,76 @@
+2026-03-03 22:40:25 | CREATE | utils.py                                 | 1231 |   +487 | dirty
+2026-03-03 22:41:36 | CREATE | tabs/image_slideshow.py                  |  411 |   +411 | 
+2026-03-03 22:41:41 | CREATE | app.py                                   |   82 |     +1 | dirty
+2026-03-03 22:41:46 | CREATE | app.py                                   |   83 |     +1 | dirty
+2026-03-03 22:42:07 | CREATE | app.py                                   |  107 |    +24 | dirty
+2026-03-03 22:46:33 | CREATE | test_image_slideshow.py                  |  128 |   +128 | 
+2026-03-03 22:46:41 | REMOVE | test_image_slideshow.py                  |    0 |   -128 | 
+2026-03-03 22:54:48 | CREATE | tabs/image_slideshow.py                  |  411 |        | 
+2026-03-03 22:54:54 | CREATE | app.py                                   |  107 |        | dirty
+2026-03-03 22:54:58 | CREATE | app.py                                   |  107 |        | dirty
+2026-03-03 22:55:36 | CREATE | test_real_files.py                       |  159 |   +159 | 
+2026-03-03 22:57:00 | CREATE | test_real_files.py                       |  159 |        | 
+2026-03-03 22:57:20 | CREATE | utils.py                                 | 1233 |     +2 | dirty
+2026-03-03 22:57:27 | CREATE | utils.py                                 | 1233 |        | dirty
+2026-03-03 22:59:28 | REMOVE | test_real_files.py                       |    0 |   -159 | 
+2026-03-03 23:04:54 | CREATE | utils.py                                 | 1235 |     +2 | dirty
+2026-03-03 23:05:00 | CREATE | utils.py                                 | 1234 |     -1 | dirty
+2026-03-04 00:38:58 | CREATE | ass_styler.py                            |    0 |        | 
+2026-03-04 00:39:03 | WRITE  | ass_styler.py                            |  103 |   +103 | 
+2026-03-04 00:43:42 | WRITE  | ass_styler.py                            |  145 |    +42 | 
+2026-03-04 08:11:41 | CREATE | utils.py                                 | 1433 |    +10 | dirty
+2026-03-04 08:12:33 | CREATE | utils.py                                 | 1437 |     +4 | dirty
+2026-03-04 08:13:10 | CREATE | tabs/image_slideshow.py                  |  417 |     +6 | dirty
+2026-03-04 08:13:44 | CREATE | utils.py                                 | 1441 |     +4 | dirty
+2026-03-04 08:29:15 | CREATE | tabs/image_slideshow.py                  |  437 |    +20 | dirty
+2026-03-04 08:29:49 | CREATE | utils.py                                 | 1481 |    +40 | dirty
+2026-03-04 08:30:12 | CREATE | utils.py                                 | 1491 |    +10 | dirty
+2026-03-04 08:39:58 | CREATE | components/speaker_colors.py             |  123 |   +123 | 
+2026-03-04 08:40:20 | CREATE | validation/transcription_validator.py    |  154 |   +154 | 
+2026-03-04 08:40:30 | CREATE | utils.py                                 | 1466 |    -25 | dirty
+2026-03-04 08:40:43 | CREATE | utils.py                                 | 1469 |     +3 | dirty
+2026-03-04 08:40:49 | CREATE | utils.py                                 | 1462 |     -7 | dirty
+2026-03-04 08:40:55 | CREATE | tabs/image_slideshow.py                  |  438 |     +1 | dirty
+2026-03-04 08:41:05 | CREATE | tabs/image_slideshow.py                  |  421 |    -17 | dirty
+2026-03-04 08:41:36 | CREATE | tabs/vo_subtitles.py                     |  243 |     +1 | dirty
+2026-03-04 08:41:46 | CREATE | tabs/vo_subtitles.py                     |  213 |    -30 | dirty
+2026-03-04 08:42:07 | CREATE | tabs/multilingual.py                     |  359 |     +1 | dirty
+2026-03-04 08:42:15 | CREATE | tabs/multilingual.py                     |  332 |    -27 | dirty
+2026-03-04 08:42:38 | CREATE | tabs/transcription.py                    |   92 |     +1 | dirty
+2026-03-04 08:42:45 | CREATE | tabs/transcription.py                    |   75 |    -17 | dirty
+2026-03-04 08:42:58 | CREATE | components/__init__.py                   |    6 |     +6 | 
+2026-03-04 08:43:04 | CREATE | validation/__init__.py                   |    7 |     +7 | 
+2026-03-04 08:43:57 | CREATE | models/__init__.py                       |    6 |     +6 | 
+2026-03-04 08:44:11 | CREATE | models/subtitles.py                      |   95 |    +95 | 
+2026-03-04 08:44:18 | CREATE | utils.py                                 | 1467 |     +5 | dirty
+2026-03-04 08:44:23 | CREATE | utils.py                                 | 1471 |     +4 | dirty
+2026-03-04 08:44:27 | CREATE | utils.py                                 | 1475 |     +4 | dirty
+2026-03-04 08:44:35 | CREATE | components/speaker_colors.py             |  126 |     +3 | dirty
+2026-03-04 08:44:41 | CREATE | components/speaker_colors.py             |  131 |     +5 | dirty
+2026-03-04 08:44:46 | CREATE | components/speaker_colors.py             |  133 |     +2 | dirty
+2026-03-04 08:44:51 | CREATE | components/speaker_colors.py             |  137 |     +4 | dirty
+2026-03-04 08:45:00 | CREATE | validation/transcription_validator.py    |  157 |     +3 | dirty
+2026-03-04 08:45:05 | CREATE | validation/transcription_validator.py    |  160 |     +3 | dirty
+2026-03-04 08:45:11 | CREATE | validation/transcription_validator.py    |  163 |     +3 | dirty
+2026-03-04 08:45:16 | CREATE | validation/transcription_validator.py    |  163 |        | dirty
+2026-03-04 08:45:21 | CREATE | validation/transcription_validator.py    |  163 |        | dirty
+2026-03-04 08:45:31 | CREATE | tests/__init__.py                        |    6 |     +6 | 
+2026-03-04 08:45:56 | CREATE | tests/test_transcription_pipeline.py     |  180 |   +180 | 
+2026-03-04 08:46:27 | CREATE | tests/test_speaker_colors.py             |  215 |   +215 | 
+2026-03-04 08:47:04 | CREATE | tests/test_subtitle_generation.py        |  310 |   +310 | 
+2026-03-04 08:47:13 | CREATE | tests/run_tests.py                       |   52 |    +52 | 
+2026-03-04 09:03:28 | CREATE | core/__init__.py                         |    8 |     +8 | 
+2026-03-04 09:03:53 | CREATE | core/temp_manager.py                     |  193 |   +193 | 
+2026-03-04 09:04:21 | CREATE | core/subprocess_utils.py                 |  234 |   +234 | 
+2026-03-04 09:04:53 | CREATE | core/validation.py                       |  278 |   +278 | 
+2026-03-04 09:05:04 | CREATE | core/__init__.py                         |   33 |    +25 | 
+2026-03-04 09:05:51 | CREATE | utils.py                                 | 1483 |     +8 | dirty
+2026-03-04 09:06:16 | CREATE | utils.py                                 | 1502 |    +19 | dirty
+2026-03-04 09:06:28 | CREATE | utils.py                                 | 1519 |    +17 | dirty
+2026-03-04 09:06:52 | CREATE | utils.py                                 | 1542 |    +23 | dirty
+2026-03-04 09:08:09 | CREATE | utils.py                                 | 1593 |    +51 | dirty
+2026-03-04 09:08:27 | CREATE | utils.py                                 | 1592 |     -1 | dirty
+2026-03-04 09:09:35 | CREATE | utils.py                                 | 1618 |    +26 | dirty
+2026-03-04 09:10:05 | CREATE | utils.py                                 | 1678 |    +60 | dirty
+2026-03-04 09:16:46 | CREATE | utils.py                                 | 1679 |     +1 | dirty
+2026-03-04 09:17:34 | CREATE | utils.py                                 | 1678 |     -1 | dirty
