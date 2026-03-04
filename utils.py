@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from mistralai import Mistral
 from mistralai.models import File
 import assemblyai as aai
-from deepgram import DeepgramClient, PrerecordedOptions, FileSource
+from deepgram import DeepgramClient
 
 import httpx
 
@@ -36,7 +36,7 @@ if assemblyai_api_key:
 # Deepgram configuration
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 if deepgram_api_key:
-    deepgram_client = DeepgramClient(deepgram_api_key)
+    deepgram_client = DeepgramClient(api_key=deepgram_api_key)
 else:
     deepgram_client = None
     print("Warning: No Deepgram API key found. Deepgram transcription will not work.")
@@ -175,55 +175,61 @@ def transcribe_audio_deepgram(audio_path, diarize=False, language_code=None):
             with open(audio_path, "rb") as file:
                 buffer_data = file.read()
 
-            payload: FileSource = {
+            payload = {
                 "buffer": buffer_data,
             }
 
-            options = PrerecordedOptions(
-                model="nova-2",
-                smart_format=True,
-                diarize=diarize,
-                language=language_code,
-                utterances=True,
-                paragraphs=True,
-            )
+            options = {
+                "model": "nova-2",
+                "smart_format": True,
+                "diarize": diarize,
+                "language": language_code,
+                "utterances": True,
+                "paragraphs": True,
+            }
 
-            response = deepgram_client.listen.rest.v("1").transcribe_file(payload, options)
+            # Using v1 rest client with dict-based options for maximum compatibility
+            response = deepgram_client.listen.v1.rest.transcribe_file(payload, options)
             
-            # Extract results
-            results = response.results
-            channel = results.channels[0]
-            alternative = channel.alternatives[0]
+            # Extract results safely using getattr where applicable
+            results = getattr(response, "results", response.get("results") if isinstance(response, dict) else None)
+            channels = getattr(results, "channels", None)
+            channel = channels[0] if channels else None
+            alternatives = getattr(channel, "alternatives", None)
+            alternative = alternatives[0] if alternatives else None
             
             # Words with timestamps
             words_data = []
-            if hasattr(alternative, "words") and alternative.words:
-                for word in alternative.words:
+            words = getattr(alternative, "words", [])
+            if words:
+                for word in words:
                     words_data.append({
-                        "text": word.word,
-                        "start": word.start,
-                        "end": word.end,
+                        "text": getattr(word, "word", ""),
+                        "start": getattr(word, "start", 0),
+                        "end": getattr(word, "end", 0),
                         "confidence": getattr(word, "confidence", 1.0),
                         "speaker_id": f"speaker_{getattr(word, 'speaker', 0)}",
                     })
             
             # Segments/utterances with speaker info
             segments_data = []
-            if hasattr(results, "utterances") and results.utterances:
-                for i, utt in enumerate(results.utterances):
+            utterances = getattr(results, "utterances", [])
+            if utterances:
+                for i, utt in enumerate(utterances):
                     segments_data.append({
                         "id": i,
-                        "text": utt.transcript,
-                        "start": utt.start,
-                        "end": utt.end,
+                        "text": getattr(utt, "transcript", ""),
+                        "start": getattr(utt, "start", 0),
+                        "end": getattr(utt, "end", 0),
                         "speaker": f"speaker_{getattr(utt, 'speaker', 0)}",
                         "confidence": getattr(utt, "confidence", 1.0),
                     })
             else:
                 # Fallback if no utterances but we have text
+                transcript = getattr(alternative, "transcript", "")
                 segments_data.append({
                     "id": 0,
-                    "text": alternative.transcript or "",
+                    "text": transcript or "",
                     "start": 0,
                     "end": words_data[-1]["end"] if words_data else 0,
                     "speaker": "speaker_0",
@@ -231,7 +237,7 @@ def transcribe_audio_deepgram(audio_path, diarize=False, language_code=None):
                 })
             
             transcription_response = {
-                "text": alternative.transcript or "",
+                "text": getattr(alternative, "transcript", ""),
                 "words": words_data,
                 "segments": segments_data,
             }
