@@ -274,25 +274,26 @@ def transcribe_audio_assemblyai(audio_path, diarize=False, language_code=None):
             transcriber = aai.Transcriber(config=config)
             transcript = transcriber.transcribe(audio_path)
             
-            # Words with timestamps
+            # Words with timestamps (convert ms to seconds)
             words_data = []
             if transcript.words:
                 for word in transcript.words:
                     words_data.append({
                         "text": word.text,
-                        "start": word.start,
-                        "end": word.end,
+                        "start": word.start / 1000.0,
+                        "end": word.end / 1000.0,
                         "confidence": getattr(word, "confidence", 1.0),
+                        "speaker_id": getattr(word, "speaker", "speaker_null"),
                     })
             
-            # Segments/utterances with speaker info
+            # Segments/utterances with speaker info (convert ms to seconds)
             segments_data = []
             if transcript.utterances:
                 for utt in transcript.utterances:
                     segments_data.append({
                         "text": utt.text,
-                        "start": utt.start,
-                        "end": utt.end,
+                        "start": utt.start / 1000.0,
+                        "end": utt.end / 1000.0,
                         "speaker": getattr(utt, "speaker", "speaker_null"),
                         "confidence": getattr(utt, "confidence", 1.0),
                     })
@@ -444,74 +445,6 @@ def concatenate_short_segments(groups):
     return concatenated_groups
 
 
-def match_words_to_speakers(segment_transcription, word_transcription):
-    speaker_segments = segment_transcription.get("segments", [])
-    word_segments = word_transcription.get("segments", [])
-    first_speaker = (
-        speaker_segments[0].get("speaker_id") if speaker_segments else "speaker_null"
-    )
-
-    for word in word_segments:
-        word_start, word_end = word["start"], word["end"]
-
-        if word_start == word_end:
-            containing_segments = [
-                seg
-                for seg in speaker_segments
-                if seg["start"] <= word_start <= seg["end"]
-            ]
-            if containing_segments:
-                word["speaker_id"] = containing_segments[0].get("speaker_id")
-                continue
-
-        closest_segment = min(
-            speaker_segments,
-            key=lambda seg: min(
-                abs(word_start - seg["start"]), abs(word_end - seg["end"])
-            ),
-        )
-        word["speaker_id"] = closest_segment.get("speaker_id")
-
-    for i, word in enumerate(word_segments):
-        if "speaker_id" not in word:
-            prev_word = word_segments[i - 1] if i > 0 else None
-            next_word = word_segments[i + 1] if i < len(word_segments) - 1 else None
-
-            if (
-                prev_word
-                and next_word
-                and prev_word.get("speaker_id") == next_word.get("speaker_id")
-            ):
-                word["speaker_id"] = prev_word["speaker_id"]
-            elif prev_word or next_word:
-                if prev_word and next_word:
-                    closest_word = (
-                        prev_word
-                        if (word_start - prev_word["end"])
-                        < (next_word["start"] - word_end)
-                        else next_word
-                    )
-                    word["speaker_id"] = closest_word["speaker_id"]
-                elif prev_word:
-                    word["speaker_id"] = prev_word["speaker_id"]
-                elif next_word:
-                    word["speaker_id"] = next_word["speaker_id"]
-            else:
-                closest_segment = min(
-                    speaker_segments,
-                    key=lambda seg: min(
-                        abs(word_start - seg["start"]), abs(word_end - seg["end"])
-                    ),
-                )
-                word["speaker_id"] = closest_segment.get("speaker_id")
-
-    for word in word_segments:
-        if "speaker_id" not in word:
-            word["speaker_id"] = first_speaker
-
-    return word_segments
-
-
 def hex_to_bgr(hex_color):
     hex_color = hex_color.lstrip("#")
     bgr = hex_color[4:6] + hex_color[2:4] + hex_color[0:2]
@@ -519,11 +452,14 @@ def hex_to_bgr(hex_color):
 
 
 def generate_subtitles(transcription_response, segment_transcription):
-    subtitles, word_segments, segment_segments = (
-        [],
-        transcription_response.get("segments", []),
-        segment_transcription.get("segments", []),
-    )
+    # Try to get words first, then fall back to segments
+    word_segments = transcription_response.get("words")
+    if not word_segments:
+        word_segments = transcription_response.get("segments", [])
+    
+    segment_segments = segment_transcription.get("segments", [])
+    
+    subtitles = []
     if not word_segments or not segment_segments:
         return subtitles
     segment_groups = split_segments_by_segment_boundaries(
@@ -1307,17 +1243,37 @@ def generate_subtitles_for_slideshow(transcription_response, durations, images):
         # Get word-level transcription for precise timing
         words = []
 
-        if hasattr(transcription_response, 'segments'):
-            segments = transcription_response.segments
-        else:
-            segments = transcription_response.get('segments', [])
+        # 1. Try to get top-level words (AssemblyAI/Deepgram format)
+        if isinstance(transcription_response, dict):
+            words = transcription_response.get('words', [])
+        elif hasattr(transcription_response, 'words'):
+            words = transcription_response.words
 
-        # Extract words from segments
-        for segment in segments:
-            if hasattr(segment, 'words') and segment.words:
-                words.extend(segment.words)
-            elif 'words' in segment and segment['words']:
-                words.extend(segment['words'])
+        # 2. Fallback to segments if words list is empty (Mistral format or nested)
+        if not words:
+            if isinstance(transcription_response, dict):
+                segments = transcription_response.get('segments', [])
+            elif hasattr(transcription_response, 'segments'):
+                segments = transcription_response.segments
+            else:
+                segments = []
+
+            # Extract words from segments
+            for segment in segments:
+                if isinstance(segment, dict):
+                    seg_words = segment.get('words', [])
+                elif hasattr(segment, 'words'):
+                    seg_words = segment.words
+                else:
+                    seg_words = []
+                
+                if seg_words:
+                    words.extend(seg_words)
+                elif isinstance(segment, dict) and 'start' in segment and 'end' in segment:
+                    # If the segment itself looks like a word (Mistral word granularity)
+                    words.append(segment)
+                elif hasattr(segment, 'start') and hasattr(segment, 'end'):
+                    words.append(segment)
 
         if not words:
             raise ValueError("No word-level transcription available")
